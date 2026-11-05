@@ -91,7 +91,6 @@ function App() {
           discount: Number(saved.discount),
           total: Number(saved.total),
           paid: Number(saved.paid),
-          due: Math.max(0, Number(saved.total) - Number(saved.paid)),
           paymentMethod: saved.payment_method === 'Mada' ? 'Mada' : 'Cash',
           kitchenNote: saved.notes || undefined,
           items: saved.items.map(item => ({
@@ -192,7 +191,6 @@ function App() {
           discount: Number(saved.discount),
           total: serverTotal,
           paid: serverTotal,
-          due: 0,
           paymentMethod: payMethod,
           kitchenNote: note || undefined
         };
@@ -218,7 +216,7 @@ function App() {
       return;
     }
     const number = nextNumber();
-    const order: Order = { id: `o-${number}`, number, type: orderType, status: 'Pending', createdAt: new Date().toISOString(), customerName: 'Walk-in Guest', items: cart.map(item => ({ id: item.id, productId: item.productId, name: item.name, qty: item.qty, unitPrice: item.price, note: note || undefined })), subtotal, tax, discount: discountAmount, total, paid: total, due: 0, paymentMethod: payMethod, kitchenNote: note || undefined };
+    const order: Order = { id: `o-${number}`, number, type: orderType, status: 'Pending', createdAt: new Date().toISOString(), customerName: 'Walk-in Guest', items: cart.map(item => ({ id: item.id, productId: item.productId, name: item.name, qty: item.qty, unitPrice: item.price, note: note || undefined })), subtotal, tax, discount: discountAmount, total, paid: total, paymentMethod: payMethod, kitchenNote: note || undefined };
     setInventory(current => current.map(item => {
       const amount = deductions.get(item.name.trim().toLowerCase()) || 0;
       return amount ? { ...item, stock: item.stock - amount } : item;
@@ -272,7 +270,6 @@ function App() {
         discount: Number(saved.discount),
         total: Number(saved.total),
         paid: Number(saved.paid),
-        due: Math.max(0, Number(saved.total) - Number(saved.paid)),
         paymentMethod: saved.payment_method === 'Mada' ? 'Mada' : 'Cash',
         kitchenNote: saved.notes || undefined,
         items: saved.items.map(item => ({ id:item.id, productId:item.productId || '', name:item.name, qty:Number(item.qty), unitPrice:Number(item.unitPrice) }))
@@ -372,7 +369,7 @@ function App() {
   const holdOrder = () => {
     if (!cart.length) { flash('There is no order to hold.'); return; }
     const number = `H-${Date.now()}`;
-    const order: Order = { id: number, number: 'HOLD', type: orderType, status: 'Pending', createdAt: new Date().toISOString(), customerName: 'Held order', items: cart.map(item => ({ id: `${item.id}-hold`, productId: item.productId, name: item.name, qty: item.qty, unitPrice: item.price })), subtotal, tax, discount: discountAmount, total, paid: 0, due: total, paymentMethod: payMethod, kitchenNote: note || undefined };
+    const order: Order = { id: number, number: 'HOLD', type: orderType, status: 'Pending', createdAt: new Date().toISOString(), customerName: 'Held order', items: cart.map(item => ({ id: `${item.id}-hold`, productId: item.productId, name: item.name, qty: item.qty, unitPrice: item.price })), subtotal, tax, discount: discountAmount, total, paid: 0, paymentMethod: payMethod, kitchenNote: note || undefined };
     setOrders(current => [order, ...current]); clearCart(); setView('orders'); flash('Order held. Resume it from the Orders list.');
   };
   const resumeOrder = (order: Order) => { setCart(order.items.map(item => ({ id: item.id, productId: item.productId, name: item.name, price: item.unitPrice, qty: item.qty }))); setOrderType(order.type); setOrders(current => current.filter(entry => entry.id !== order.id)); setView('pos'); flash('Held order restored to the cart.'); };
