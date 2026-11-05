@@ -35,6 +35,14 @@ function App() {
   const [toast, setToast] = useState('');
   const [mobileNav, setMobileNav] = useState(false);
   const [light, setLight] = useState(false);
+  const [apiBase, setApiBase] = useState(() => safeRead('musafir-api-base', import.meta.env.VITE_API_URL || ''));
+  const [apiEmail, setApiEmail] = useState('');
+  const [apiPassword, setApiPassword] = useState('');
+  const [apiToken, setApiToken] = useState('');
+  const [apiBranchId, setApiBranchId] = useState('');
+  const [apiConnected, setApiConnected] = useState(false);
+  const [apiBusy, setApiBusy] = useState(false);
+  const [apiMessage, setApiMessage] = useState('');
 
   useEffect(() => { save('musafir-products', products); }, [products]);
   useEffect(() => { save('musafir-inventory', inventory); }, [inventory]);
@@ -69,8 +77,51 @@ function App() {
     setCart(current => { const exists = current.find(item => item.productId === product.id); return exists ? current.map(item => item.productId === product.id ? { ...item, qty: item.qty + 1 } : item) : [...current, { id: `${product.id}-${Date.now()}`, productId: product.id, name: product.name, price: product.price, qty: 1 }]; });
   };
   const clearCart = () => { setCart([]); setDiscount('0'); setNote(''); };
-  const placeOrder = () => {
+  const placeOrder = async () => {
     if (!cart.length) { flash('Add at least one menu item first.'); return; }
+    if (apiToken && apiBranchId) {
+      try {
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/orders`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiToken}` },
+          body: JSON.stringify({
+            orderType,
+            paymentMethod: payMethod,
+            discount: discountAmount,
+            taxRate: 0.15,
+            notes: note,
+            items: cart.map(item => ({ productId: item.productId, quantity: item.qty }))
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Order could not be saved to the server.');
+        const saved = result.order;
+        const serverTotal = Number(saved.total);
+        const order: Order = {
+          id: saved.id,
+          number: String(saved.order_number),
+          type: orderType,
+          status: saved.status || 'Pending',
+          createdAt: saved.created_at || new Date().toISOString(),
+          customerName: 'Walk-in Guest',
+          items: cart.map(item => ({ id: item.id, productId: item.productId, name: item.name, qty: item.qty, unitPrice: item.price, note: note || undefined })),
+          subtotal: Number(saved.subtotal),
+          tax: Number(saved.tax),
+          discount: Number(saved.discount),
+          total: serverTotal,
+          paid: serverTotal,
+          due: 0,
+          paymentMethod: payMethod,
+          kitchenNote: note || undefined
+        };
+        setOrders(current => [order, ...current]);
+        setLogs(current => [{ id: `log-${Date.now()}`, title: 'Server sale completed', detail: `Order #${order.number} · ${currency(serverTotal)} · ${payMethod}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
+        clearCart(); setView('orders'); flash(`Order #${order.number} saved to the database.`);
+      } catch (error) {
+        flash(error instanceof Error ? error.message : 'Backend connection failed. Order was not submitted.');
+      }
+      return;
+    }
     const number = nextNumber();
     const order: Order = { id: `o-${number}`, number, type: orderType, status: 'Pending', createdAt: new Date().toISOString(), customerName: 'Walk-in Guest', items: cart.map(item => ({ id: item.id, productId: item.productId, name: item.name, qty: item.qty, unitPrice: item.price, note: note || undefined })), subtotal, tax, discount: discountAmount, total, paid: total, due: 0, paymentMethod: payMethod, kitchenNote: note || undefined };
     const deductions = new Map<string, number>();
@@ -78,8 +129,62 @@ function App() {
     setInventory(current => current.map(item => { const amount = deductions.get(item.name.toLowerCase()) || 0; return amount ? { ...item, stock: Math.max(0, item.stock - amount) } : item; }));
     setOrders(current => [order, ...current]);
     setLogs(current => [{ id: `log-${Date.now()}`, title: 'Sale completed', detail: `Order #${number} · ${currency(total)} · ${payMethod}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
-    clearCart(); setView('orders'); flash(`Order #${number} placed successfully.`);
+    clearCart(); setView('orders'); flash(`Order #${number} placed successfully (offline demo).`);
   };
+  const connectBackend = async () => {
+    const base = apiBase.trim().replace(/\/$/, '');
+    if (!base || !apiEmail.trim() || !apiPassword) { setApiMessage('API URL, email and password are required.'); return; }
+    setApiBusy(true); setApiMessage('');
+    try {
+      const loginResponse = await fetch(`${base}/api/auth/login`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: apiEmail.trim(), password: apiPassword })
+      });
+      const login = await loginResponse.json();
+      if (!loginResponse.ok) throw new Error(login.error || 'Login failed.');
+      const branchId = login.user?.branchId;
+      if (!login.token || !branchId) throw new Error('Login response did not include a branch session.');
+      const menuResponse = await fetch(`${base}/api/menu?branchId=${encodeURIComponent(branchId)}`);
+      const menu = await menuResponse.json();
+      if (!menuResponse.ok || !Array.isArray(menu.products) || !menu.products.length) throw new Error(menu.error || 'No active menu products were returned for this branch.');
+      setProducts(menu.products.map((item: { id:string; name:string; category?:string; price:string|number; image_url?:string }) => ({
+        id: item.id,
+        name: item.name,
+        category: (item.category || 'Snacks') as Product['category'],
+        price: Number(item.price),
+        image: item.image_url || '',
+        popularity: 0,
+        recipe: []
+      })));
+      setApiBase(base); save('musafir-api-base', base);
+      setApiToken(login.token); setApiBranchId(branchId); setApiConnected(true);
+      setApiPassword('');
+      setApiMessage(`Connected to branch ${branchId}. ${menu.products.length} menu products loaded.`);
+    } catch (error) {
+      setApiToken(''); setApiBranchId(''); setApiConnected(false);
+      setApiMessage(error instanceof Error ? error.message : 'Could not connect to backend.');
+    } finally { setApiBusy(false); }
+  };
+  const disconnectBackend = () => {
+    setApiToken(''); setApiBranchId(''); setApiConnected(false); setProducts(demoProducts);
+    setApiMessage('Disconnected. POS is using local demo data.');
+  };
+  const apiSettings = (): ReactNode => <section className={`${panel} max-w-2xl p-5 md:p-7`}>
+    <div className="mb-5">{heading('System integration','Backend connection','Connect this POS to the live Saudi branch database.')}</div>
+    <label className="mb-1 block text-xs text-slate-400">Backend API URL</label>
+    <input value={apiBase} onChange={event=>setApiBase(event.target.value)} placeholder="https://your-api-service.onrender.com" className="field mb-4 w-full"/>
+    <label className="mb-1 block text-xs text-slate-400">Admin email</label>
+    <input type="email" value={apiEmail} onChange={event=>setApiEmail(event.target.value)} placeholder="admin@example.com" className="field mb-4 w-full"/>
+    <label className="mb-1 block text-xs text-slate-400">Admin password</label>
+    <input type="password" value={apiPassword} onChange={event=>setApiPassword(event.target.value)} placeholder="Enter backend admin password" className="field mb-4 w-full"/>
+    <div className="flex flex-wrap gap-2">
+      <button onClick={connectBackend} disabled={apiBusy} className="rounded-xl bg-[#e7b943] px-4 py-2.5 text-sm font-semibold text-[#17130b] disabled:opacity-50">{apiBusy?'Connecting…':'Connect backend'}</button>
+      {apiConnected&&<button onClick={disconnectBackend} className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-slate-300">Disconnect</button>}
+    </div>
+    <p className={`mt-4 text-xs ${apiConnected?'text-emerald-300':'text-slate-400'}`}>{apiConnected?'Connected: new checkouts are written to PostgreSQL.':'Not connected: checkout remains in local demo mode.'}</p>
+    {apiMessage&&<p role="status" className="mt-2 rounded-lg bg-white/[.04] p-3 text-xs text-slate-300">{apiMessage}</p>}
+    {apiConnected&&<p className="mt-3 text-[11px] text-slate-500">Branch ID: {apiBranchId}</p>}
+  </section>;
   const holdOrder = () => {
     if (!cart.length) { flash('There is no order to hold.'); return; }
     const number = `H-${Date.now()}`;
@@ -120,7 +225,7 @@ function App() {
   const moduleMessages: Record<string,string> = { tables:'Table occupancy, seating and table transfer workflows are not implemented yet.', reservations:'Reservation scheduling and guest reminders are not implemented yet.', menu:'Menu editing and product creation are planned; current products are available in POS.', categories:'Category editing is not implemented yet; category filters are available in POS.', recipes:'Recipe editor and ingredient-to-stock mapping need completion.', purchases:'Purchase orders and receiving history need completion.', delivery:'Dispatch assignment and courier tracking need completion.', expenses:'Expense entry and approval workflows need completion.', employees:'Employee directory is available in demo data; employee editing needs completion.', attendance:'Shift attendance and schedules need completion.', payroll:'Payroll runs, advances and salary payments need completion.', reports:'Dashboard includes actual order totals and item sales; date filtering/export reports need completion.', profit:'Reliable profit & loss requires recorded COGS, purchases, expenses and salaries; not yet implemented.',  discounts:'Coupon codes and discount authorization need completion.', roles:'Authentication and enforceable role permissions need a secure backend.', settings:'Restaurant and branch settings need completion.' };
   const selectedLabel = moduleGroups.flatMap(group=>group.items).find(item=>item.id===view)?.label || 'Dashboard';
   const placeholder = (): ReactNode => <section className={`${panel} p-6 md:p-8`}><div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#e7b943]/10 text-[#e7b943]"><Activity size={21}/></div><div className="mt-5">{heading('Module status',selectedLabel,'This module is listed for the complete product scope.')}</div><p className="mt-4 max-w-2xl text-sm leading-6 text-slate-400">{moduleMessages[view] || 'This module is planned but is not part of the current working demo.'}</p><div className="mt-6 rounded-xl border border-amber-300/15 bg-amber-300/[.04] p-4 text-xs leading-5 text-amber-100/70">This screen is intentionally marked as incomplete—no demo action or placeholder value is presented as a completed workflow.</div><button onClick={()=>setView('dashboard')} className="mt-5 rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-300 hover:border-white/20">Back to dashboard</button></section>;
-  const content: Record<string,()=>ReactNode> = { dashboard, pos, orders:ordersView, kitchen, inventory:inventoryView, customers:customersView, accounting, qr };
+  const content: Record<string,()=>ReactNode> = { dashboard, pos, orders:ordersView, kitchen, inventory:inventoryView, customers:customersView, accounting, qr, settings:apiSettings };
   const activeContent = content[view] ? content[view]() : placeholder();
 
   return <div className={`${light?'theme-light':''} min-h-screen bg-[#0e1114] text-slate-100`}><div className="flex min-h-screen"><aside className={`fixed inset-y-0 left-0 z-40 flex w-[260px] flex-col border-r border-white/[.06] bg-[#111519] transition-transform lg:static lg:translate-x-0 ${mobileNav?'translate-x-0':'-translate-x-full'}`}><div className="flex h-[76px] items-center gap-3 border-b border-white/[.06] px-5"><div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-[#f0ca69] to-[#b37a18] font-serif text-xl font-black text-[#201707]">M</div><div><div className="font-serif text-lg font-bold tracking-wide text-white">Musafir</div><div className="text-[9px] uppercase tracking-[.28em] text-[#cba84c]">Fast Food</div></div><button onClick={()=>setMobileNav(false)} className="ml-auto text-slate-500 lg:hidden"><X size={19}/></button></div><div className="mx-3 mt-4 flex items-center gap-3 rounded-xl border border-white/[.06] bg-white/[.025] p-3"><div className="grid h-9 w-9 place-items-center rounded-full bg-[#e7b943] text-sm font-bold text-[#211908]">A</div><div className="min-w-0"><div className="text-sm font-medium text-white">Admin</div><div className="text-[11px] text-slate-500">Restaurant owner</div></div><span className="ml-auto h-2 w-2 rounded-full bg-emerald-400"/></div><nav className="custom-scrollbar flex-1 space-y-5 overflow-y-auto px-3 py-5">{moduleGroups.map(group=><div key={group.title}><div className="mb-2 px-3 text-[9px] font-bold uppercase tracking-[.2em] text-slate-600">{group.title}</div><div className="space-y-1">{group.items.map(item=><button key={item.id} onClick={()=>{setView(item.id);setMobileNav(false);}} className={`nav-item ${view===item.id?'nav-active':''}`}><item.icon size={16} strokeWidth={1.8}/><span className="flex-1 text-left">{item.label}</span>{item.id==='pos'&&cart.length>0&&<span className="rounded-full bg-[#e7b943] px-1.5 py-0.5 text-[10px] font-bold text-black">{cart.reduce((n,i)=>n+i.qty,0)}</span>}</button>)}</div></div>)}</nav><div className="border-t border-white/[.06] p-3"><div className="rounded-xl bg-gradient-to-r from-[#211d13] to-[#17191a] p-3"><div className="text-xs font-medium text-[#ead18b]">Good Food • Good Mood</div><div className="mt-1 text-[10px] text-slate-500">Premium service, made simple.</div></div><button onClick={()=>flash('Sign out requires authentication, which is not yet configured.')} className="mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs text-slate-500 hover:bg-white/[.04] hover:text-slate-300"><LogOut size={15}/>Sign out</button></div></aside>
