@@ -4,6 +4,7 @@ import { categories, demoAuditLogs, demoCustomers, demoEmployees, demoInventory,
 import { type CartItem, type Customer, type Employee, type InventoryItem, type Order, type OrderStatus, type PaymentMethod, type Product } from './types';
 
 const currency = (amount: number) => `SAR ${amount.toLocaleString('en-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const localDate = (date = new Date()) => [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
 const safeRead = <T,>(key: string, initial: T): T => {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : initial; } catch { return initial; }
 };
@@ -470,8 +471,8 @@ function App() {
     if (!Number.isFinite(amount) || amount <= 0) { flash('Enter an expense amount greater than zero.'); return; }
     const paymentMethod = (window.prompt('Payment method: Cash or Mada', 'Cash') || 'Cash').trim();
     if (!['Cash', 'Mada'].includes(paymentMethod)) { flash('Payment method must be Cash or Mada.'); return; }
-    const date = window.prompt('Expense date (YYYY-MM-DD)', new Date().toISOString().slice(0, 10)) || new Date().toISOString().slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T00:00:00`).getTime())) { flash('Enter a valid date in YYYY-MM-DD format.'); return; }
+    const date = window.prompt('Expense date (YYYY-MM-DD)', localDate()) || localDate();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T00:00:00`).getTime()) || localDate(new Date(`${date}T00:00:00`)) !== date) { flash('Enter a valid date in YYYY-MM-DD format.'); return; }
     const expense: ExpenseRecord = { id: `expense-${Date.now()}`, date, category: category.trim(), description: description.trim(), amount, paymentMethod: paymentMethod as PaymentMethod, createdAt: new Date().toISOString() };
     setExpenses(current => [expense, ...current]);
     setLogs(current => [{ id: `expense-log-${Date.now()}`, title: 'Expense recorded', detail: `${expense.category} · ${expense.description} · ${currency(amount)} · ${paymentMethod}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
@@ -484,8 +485,7 @@ function App() {
     flash('Expense deleted.');
   };
   const expensesView = (): ReactNode => {
-    const now = new Date();
-    const today = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+    const today = localDate();
     const month = today.slice(0, 7);
     const todayTotal = expenses.filter(item => item.date === today).reduce((sum, item) => sum + item.amount, 0);
     const monthTotal = expenses.filter(item => item.date.startsWith(month)).reduce((sum, item) => sum + item.amount, 0);
