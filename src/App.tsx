@@ -213,7 +213,27 @@ function App() {
     setOrders(current => [order, ...current]); clearCart(); setView('orders'); flash('Order held. Resume it from the Orders list.');
   };
   const resumeOrder = (order: Order) => { setCart(order.items.map(item => ({ id: item.id, productId: item.productId, name: item.name, price: item.unitPrice, qty: item.qty }))); setOrderType(order.type); setOrders(current => current.filter(entry => entry.id !== order.id)); setView('pos'); flash('Held order restored to the cart.'); };
-  const changeStatus = (id: string) => setOrders(current => current.map(order => { if (order.id !== id) return order; const index = workflow.indexOf(order.status); return { ...order, status: workflow[Math.min(index + 1, workflow.length - 1)] }; }));
+  const changeStatus = async (id: string) => {
+    const currentOrder = orders.find(order => order.id === id);
+    if (!currentOrder) return;
+    const index = workflow.indexOf(currentOrder.status);
+    const nextStatus = workflow[Math.min(index + 1, workflow.length - 1)];
+    if (apiToken && apiConnected) {
+      try {
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/orders/${encodeURIComponent(id)}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiToken}` },
+          body: JSON.stringify({ status: nextStatus })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Order status could not be updated.');
+      } catch (error) {
+        flash(error instanceof Error ? error.message : 'Could not update order status on server.');
+        return;
+      }
+    }
+    setOrders(current => current.map(order => order.id === id ? { ...order, status: nextStatus } : order));
+  };
   const addStock = (item: InventoryItem) => { const quantity = Number(window.prompt(`How many ${item.unit} should be added to ${item.name}?`, '10')); if (!Number.isFinite(quantity) || quantity <= 0) return; setInventory(current => current.map(entry => entry.id === item.id ? { ...entry, stock: entry.stock + quantity } : entry)); flash(`${item.name} stock updated.`); };
   const addCustomer = () => { const name = window.prompt('Customer name'); if (!name?.trim()) return; const phone = window.prompt('Phone number') || ''; setCustomers(current => [{ id: `c-${Date.now()}`, name: name.trim(), phone, address: '', due: 0, loyaltyPoints: 0, favoriteItems: [] }, ...current]); flash('Customer added.'); };
 
