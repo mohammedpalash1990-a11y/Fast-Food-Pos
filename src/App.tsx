@@ -353,7 +353,7 @@ function App() {
       <input ref={backupInputRef} type="file" accept="application/json,.json" className="hidden" onChange={event => { void importBackup(event.target.files?.[0]); }} />
     </div>
     {backupMessage && <p role="status" className="mt-3 text-xs text-slate-300">{backupMessage}</p>}
-    <p className="mt-3 text-xs leading-5 text-amber-200/70">Backups contain saved orders, products, stock, customers, employees, suppliers, expenses and audit history. Store backup files securely. This does not copy data from the connected server database.</p>
+    <p className="mt-3 text-xs leading-5 text-amber-200/70">Backups contain saved orders, products, stock, customers, employees, suppliers, purchases, expenses and audit history. Store backup files securely. This does not copy data from the connected server database.</p>
   </section><section className={`${panel} max-w-2xl p-5 md:p-7`}>
     <div className="mb-5">{heading('System integration','Backend connection','Connect this POS to the live Saudi branch database.')}</div>
     <label className="mb-1 block text-xs text-slate-400">Backend API URL</label>
@@ -426,12 +426,12 @@ function App() {
   const inventoryView = (): ReactNode => <section className={`${panel} p-5`}><div className="mb-5 flex items-end justify-between">{heading('Stock control','Inventory','Current stock and reorder thresholds.')}</div><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="text-[11px] uppercase tracking-wider text-slate-500"><tr><th className="pb-3">Ingredient</th><th className="pb-3">Category</th><th className="pb-3">On hand</th><th className="pb-3">Reorder at</th><th className="pb-3">Supplier</th><th className="pb-3">Status</th><th/></tr></thead><tbody>{inventory.map(item=><tr key={item.id} className="border-t border-white/[.06]"><td className="py-3 font-medium text-slate-200">{item.name}</td><td className="py-3 text-slate-400">{item.category}</td><td className="py-3 text-slate-300">{item.stock} {item.unit}</td><td className="py-3 text-slate-400">{item.reorderLevel} {item.unit}</td><td className="py-3 text-slate-400">{item.supplier}</td><td className="py-3"><span className={`rounded-full px-2 py-1 text-[11px] ${item.stock<=item.reorderLevel?'bg-rose-400/10 text-rose-300':'bg-emerald-400/10 text-emerald-300'}`}>{item.stock<=item.reorderLevel?'Restock':'In stock'}</span></td><td className="py-3 text-right"><button onClick={()=>addStock(item)} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-300 hover:border-[#e7b943]/40">Receive stock</button></td></tr>)}</tbody></table></div></section>;
   const addPurchase = () => {
     if (!inventory.length || !suppliers.length) { flash('Add at least one inventory item and supplier first.'); return; }
-    const itemOptions = inventory.map((item, index) => `${index + 1}. ${item.name} (${item.stock} ${item.unit})`).join('\\n');
-    const itemChoice = Number(window.prompt(`Select inventory item by number:\\n${itemOptions}`, '1'));
+    const itemOptions = inventory.map((item, index) => `${index + 1}. ${item.name} (${item.stock} ${item.unit})`).join('\n');
+    const itemChoice = Number(window.prompt(`Select inventory item by number:\n${itemOptions}`, '1'));
     if (!Number.isInteger(itemChoice) || itemChoice < 1 || itemChoice > inventory.length) { flash('Select a valid inventory item.'); return; }
     const item = inventory[itemChoice - 1];
-    const supplierOptions = suppliers.map((supplier, index) => `${index + 1}. ${supplier.name}`).join('\\n');
-    const supplierChoice = Number(window.prompt(`Select supplier by number:\\n${supplierOptions}`, String(Math.max(1, suppliers.findIndex(supplier => supplier.name === item.supplier) + 1))));
+    const supplierOptions = suppliers.map((supplier, index) => `${index + 1}. ${supplier.name}`).join('\n');
+    const supplierChoice = Number(window.prompt(`Select supplier by number:\n${supplierOptions}`, String(Math.max(1, suppliers.findIndex(supplier => supplier.name === item.supplier) + 1))));
     if (!Number.isInteger(supplierChoice) || supplierChoice < 1 || supplierChoice > suppliers.length) { flash('Select a valid supplier.'); return; }
     const supplier = suppliers[supplierChoice - 1];
     const quantity = Number(window.prompt(`Quantity received (${item.unit})`, '1'));
