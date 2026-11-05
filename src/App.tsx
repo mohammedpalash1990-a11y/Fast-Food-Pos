@@ -345,7 +345,7 @@ function App() {
     </div>
     {backupMessage && <p role="status" className="mt-3 text-xs text-slate-300">{backupMessage}</p>}
     <p className="mt-3 text-xs leading-5 text-amber-200/70">Backups contain saved orders, products, stock, customers, employees, suppliers and audit history. Store backup files securely. This does not copy data from the connected server database.</p>
-  </section><section className={`${panel} max-w-2xl p-5 md:p-7`}> className={`${panel} max-w-2xl p-5 md:p-7`}>
+  </section><section className={`${panel} max-w-2xl p-5 md:p-7`}>
     <div className="mb-5">{heading('System integration','Backend connection','Connect this POS to the live Saudi branch database.')}</div>
     <label className="mb-1 block text-xs text-slate-400">Backend API URL</label>
     <input value={apiBase} onChange={event=>setApiBase(event.target.value)} placeholder="https://your-api-service.onrender.com" className="field mb-4 w-full"/>
