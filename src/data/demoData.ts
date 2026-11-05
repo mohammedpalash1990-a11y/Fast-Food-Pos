@@ -127,7 +127,7 @@ export const demoOrders: Order[] = [
     total: 683,
     paid: 400,
     due: 283,
-    paymentMethod: 'Card',
+    paymentMethod: 'Mada',
     kitchenNote: 'Extra cheese' 
   },
   {
@@ -146,7 +146,7 @@ export const demoOrders: Order[] = [
     total: 367.5,
     paid: 0,
     due: 367.5,
-    paymentMethod: 'Digital',
+    paymentMethod: 'Mada',
     kitchenNote: 'Add spicy sauce' 
   }
 ];
