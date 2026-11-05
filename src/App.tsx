@@ -144,13 +144,17 @@ function App() {
       if (!loginResponse.ok) throw new Error(login.error || 'Login failed.');
       const branchId = login.user?.branchId;
       if (!login.token || !branchId) throw new Error('Login response did not include a branch session.');
-      const [menuResponse, ordersResponse] = await Promise.all([
+      const authHeaders = { Authorization: `Bearer ${login.token}` };
+      const [menuResponse, ordersResponse, inventoryResponse] = await Promise.all([
         fetch(`${base}/api/menu?branchId=${encodeURIComponent(branchId)}`),
-        fetch(`${base}/api/orders?limit=150`, { headers: { Authorization: `Bearer ${login.token}` } })
+        fetch(`${base}/api/orders?limit=150`, { headers: authHeaders }),
+        fetch(`${base}/api/inventory`, { headers: authHeaders })
       ]);
-      const [menu, orderData] = await Promise.all([menuResponse.json(), ordersResponse.json()]);
+      const [menu, orderData, inventoryData] = await Promise.all([menuResponse.json(), ordersResponse.json(), inventoryResponse.json()]);
       if (!menuResponse.ok || !Array.isArray(menu.products) || !menu.products.length) throw new Error(menu.error || 'No active menu products were returned for this branch.');
       if (!ordersResponse.ok || !Array.isArray(orderData.orders)) throw new Error(orderData.error || 'Could not load branch order history.');
+      if (!inventoryResponse.ok || !Array.isArray(inventoryData.items)) throw new Error(inventoryData.error || 'Could not load branch inventory.');
+      setInventory(inventoryData.items.map((item: {id:string;name:string;category?:string;unit:string;stock:string|number;reorderLevel:string|number;unitCost:string|number;supplier?:string;expiresOn?:string|null})=>({id:item.id,name:item.name,category:item.category||'General',unit:item.unit,stock:Number(item.stock),reorderLevel:Number(item.reorderLevel),cost:Number(item.unitCost),supplier:item.supplier||'—',expiry:item.expiresOn||''})));
       setOrders(orderData.orders.map((saved: { id:string; order_number:number|string; order_type:Order['type']; status:string; created_at:string; customer_name:string; subtotal:string|number; tax:string|number; discount:string|number; total:string|number; paid:string|number; payment_method:string; notes?:string; items:Array<{id:string;productId:string|null;name:string;qty:number;unitPrice:string|number}> }) => ({
         id: saved.id,
         number: String(saved.order_number),
@@ -180,7 +184,7 @@ function App() {
       setApiBase(base); save('musafir-api-base', base);
       setApiToken(login.token); setApiBranchId(branchId); setApiConnected(true);
       setApiPassword('');
-      setApiMessage(`Connected to branch ${branchId}. ${menu.products.length} menu products and ${orderData.orders.length} orders loaded.`);
+      setApiMessage(`Connected to branch ${branchId}. ${menu.products.length} menu products, ${orderData.orders.length} orders and ${inventoryData.items.length} inventory items loaded.`);
     } catch (error) {
       setApiToken(''); setApiBranchId(''); setApiConnected(false);
       setApiMessage(error instanceof Error ? error.message : 'Could not connect to backend.');
@@ -234,7 +238,7 @@ function App() {
     }
     setOrders(current => current.map(order => order.id === id ? { ...order, status: nextStatus } : order));
   };
-  const addStock = (item: InventoryItem) => { const quantity = Number(window.prompt(`How many ${item.unit} should be added to ${item.name}?`, '10')); if (!Number.isFinite(quantity) || quantity <= 0) return; setInventory(current => current.map(entry => entry.id === item.id ? { ...entry, stock: entry.stock + quantity } : entry)); flash(`${item.name} stock updated.`); };
+  const addStock = async (item: InventoryItem) => { const quantity = Number(window.prompt(`How many ${item.unit} should be added to ${item.name}?`, '10')); if (!Number.isFinite(quantity) || quantity <= 0) return; if(apiToken&&apiConnected){try{const response=await fetch(`${apiBase.replace(/\\/$/,'')}/api/inventory/${encodeURIComponent(item.id)}/adjust`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({quantity,note:'Stock received from POS inventory'})});const result=await response.json();if(!response.ok)throw new Error(result.error||'Stock could not be updated.');const saved=result.item;setInventory(current=>current.map(entry=>entry.id===item.id?{...entry,stock:Number(saved.stock)}:entry));flash(`${item.name} stock updated in database.`);return;}catch(error){flash(error instanceof Error?error.message:'Stock update failed.');return;}}setInventory(current=>current.map(entry=>entry.id===item.id?{...entry,stock:entry.stock+quantity}:entry));flash(`${item.name} stock updated in offline demo.`); };
   const addCustomer = () => { const name = window.prompt('Customer name'); if (!name?.trim()) return; const phone = window.prompt('Phone number') || ''; setCustomers(current => [{ id: `c-${Date.now()}`, name: name.trim(), phone, address: '', due: 0, loyaltyPoints: 0, favoriteItems: [] }, ...current]); flash('Customer added.'); };
 
   const panel = 'rounded-[24px] border border-white/[.07] bg-[#14191f] shadow-[0_18px_50px_rgba(0,0,0,.24)]';
