@@ -144,9 +144,30 @@ function App() {
       if (!loginResponse.ok) throw new Error(login.error || 'Login failed.');
       const branchId = login.user?.branchId;
       if (!login.token || !branchId) throw new Error('Login response did not include a branch session.');
-      const menuResponse = await fetch(`${base}/api/menu?branchId=${encodeURIComponent(branchId)}`);
-      const menu = await menuResponse.json();
+      const [menuResponse, ordersResponse] = await Promise.all([
+        fetch(`${base}/api/menu?branchId=${encodeURIComponent(branchId)}`),
+        fetch(`${base}/api/orders?limit=150`, { headers: { Authorization: `Bearer ${login.token}` } })
+      ]);
+      const [menu, orderData] = await Promise.all([menuResponse.json(), ordersResponse.json()]);
       if (!menuResponse.ok || !Array.isArray(menu.products) || !menu.products.length) throw new Error(menu.error || 'No active menu products were returned for this branch.');
+      if (!ordersResponse.ok || !Array.isArray(orderData.orders)) throw new Error(orderData.error || 'Could not load branch order history.');
+      setOrders(orderData.orders.map((saved: { id:string; order_number:number|string; order_type:Order['type']; status:string; created_at:string; customer_name:string; subtotal:string|number; tax:string|number; discount:string|number; total:string|number; paid:string|number; payment_method:string; notes?:string; items:Array<{id:string;productId:string|null;name:string;qty:number;unitPrice:string|number}> }) => ({
+        id: saved.id,
+        number: String(saved.order_number),
+        type: saved.order_type,
+        status: saved.status as OrderStatus,
+        createdAt: saved.created_at,
+        customerName: saved.customer_name,
+        subtotal: Number(saved.subtotal),
+        tax: Number(saved.tax),
+        discount: Number(saved.discount),
+        total: Number(saved.total),
+        paid: Number(saved.paid),
+        due: Math.max(0, Number(saved.total) - Number(saved.paid)),
+        paymentMethod: saved.payment_method === 'Mada' ? 'Mada' : 'Cash',
+        kitchenNote: saved.notes || undefined,
+        items: saved.items.map(item => ({ id:item.id, productId:item.productId || '', name:item.name, qty:Number(item.qty), unitPrice:Number(item.unitPrice) }))
+      })));
       setProducts(menu.products.map((item: { id:string; name:string; category?:string; price:string|number; image_url?:string }) => ({
         id: item.id,
         name: item.name,
@@ -159,7 +180,7 @@ function App() {
       setApiBase(base); save('musafir-api-base', base);
       setApiToken(login.token); setApiBranchId(branchId); setApiConnected(true);
       setApiPassword('');
-      setApiMessage(`Connected to branch ${branchId}. ${menu.products.length} menu products loaded.`);
+      setApiMessage(`Connected to branch ${branchId}. ${menu.products.length} menu products and ${orderData.orders.length} orders loaded.`);
     } catch (error) {
       setApiToken(''); setApiBranchId(''); setApiConnected(false);
       setApiMessage(error instanceof Error ? error.message : 'Could not connect to backend.');
