@@ -50,6 +50,79 @@ function App() {
   useEffect(() => { save('musafir-orders', orders); }, [orders]);
   useEffect(() => { save('musafir-cart', cart); }, [cart]);
   useEffect(() => { save('musafir-audit', logs); }, [logs]);
+
+  useEffect(() => {
+    if (!apiConnected || !apiToken || !apiBranchId) return;
+    let active = true;
+    const refreshLiveData = async () => {
+      try {
+        const headers = { Authorization: `Bearer ${apiToken}` };
+        const [ordersResponse, inventoryResponse] = await Promise.all([
+          fetch(`${apiBase.replace(/\\/$/, '')}/api/orders?limit=150`, { headers }),
+          fetch(`${apiBase.replace(/\\/$/, '')}/api/inventory`, { headers })
+        ]);
+        if (!ordersResponse.ok || !inventoryResponse.ok) return;
+        const [orderData, inventoryData] = await Promise.all([ordersResponse.json(), inventoryResponse.json()]);
+        if (!active || !Array.isArray(orderData.orders) || !Array.isArray(inventoryData.items)) return;
+        const liveOrders: Order[] = orderData.orders.map((saved: {
+          id: string; order_number: number | string; order_type: Order['type']; status: string;
+          created_at: string; customer_name: string; subtotal: string | number; tax: string | number;
+          discount: string | number; total: string | number; paid: string | number;
+          payment_method: string; notes?: string;
+          items: Array<{ id: string; productId: string | null; name: string; qty: number; unitPrice: string | number }>;
+        }) => ({
+          id: saved.id,
+          number: String(saved.order_number),
+          type: saved.order_type,
+          status: saved.status as OrderStatus,
+          createdAt: saved.created_at,
+          customerName: saved.customer_name,
+          subtotal: Number(saved.subtotal),
+          tax: Number(saved.tax),
+          discount: Number(saved.discount),
+          total: Number(saved.total),
+          paid: Number(saved.paid),
+          due: Math.max(0, Number(saved.total) - Number(saved.paid)),
+          paymentMethod: saved.payment_method === 'Mada' ? 'Mada' : 'Cash',
+          kitchenNote: saved.notes || undefined,
+          items: saved.items.map(item => ({
+            id: item.id,
+            productId: item.productId || '',
+            name: item.name,
+            qty: Number(item.qty),
+            unitPrice: Number(item.unitPrice)
+          }))
+        }));
+        setOrders(current => [
+          ...current.filter(order => order.number === 'HOLD'),
+          ...liveOrders
+        ]);
+        setInventory(inventoryData.items.map((item: {
+          id: string; name: string; category?: string; unit: string;
+          stock: string | number; reorderLevel: string | number; unitCost: string | number;
+          supplier?: string; expiresOn?: string | null;
+        }) => ({
+          id: item.id,
+          name: item.name,
+          category: item.category || 'General',
+          unit: item.unit,
+          stock: Number(item.stock),
+          reorderLevel: Number(item.reorderLevel),
+          cost: Number(item.unitCost),
+          supplier: item.supplier || '—',
+          expiry: item.expiresOn || ''
+        })));
+      } catch {
+        // Keep the last confirmed server snapshot during temporary network failures.
+      }
+    };
+    void refreshLiveData();
+    const interval = window.setInterval(() => { void refreshLiveData(); }, 15000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [apiBase, apiToken, apiBranchId, apiConnected]);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(''), 2800); return () => window.clearTimeout(timer); }, [toast]);
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
