@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Activity, ArrowDownRight, ArrowUpRight, BarChart3, Bell, Bike, BookOpen, Boxes, BriefcaseBusiness, CalendarDays, ChefHat, ChevronDown, CircleDollarSign, ClipboardList, CreditCard, Grid2X2, LayoutDashboard, LogOut, Menu, Package, Plus, Printer, Search, Settings, ShoppingBag, ShoppingCart, Sparkles, Table2, Users, Wallet, X } from 'lucide-react';
+import { Activity, ArrowDownRight, ArrowUpRight, BarChart3, Bell, Bike, BookOpen, Boxes, BriefcaseBusiness, CalendarDays, ChefHat, ChevronDown, CircleDollarSign, ClipboardList, Grid2X2, LayoutDashboard, LogOut, Menu, Package, Plus, Printer, Search, Settings, ShoppingBag, ShoppingCart, Sparkles, Table2, Users, Wallet, X } from 'lucide-react';
 import { categories, demoAuditLogs, demoCustomers, demoEmployees, demoInventory, demoOrders, demoProducts, demoSuppliers } from './data/demoData';
 import { type CartItem, type Customer, type InventoryItem, type Order, type OrderStatus, type PaymentMethod, type Product } from './types';
 
@@ -30,7 +30,6 @@ function App() {
   const [search, setSearch] = useState('');
   const [orderType, setOrderType] = useState<Order['type']>('Dine-in');
   const [payMethod, setPayMethod] = useState<PaymentMethod>('Cash');
-  const [cash, setCash] = useState('');
   const [discount, setDiscount] = useState('0');
   const [note, setNote] = useState('');
   const [toast, setToast] = useState('');
@@ -50,7 +49,6 @@ function App() {
   const discountAmount = (subtotal + tax) * Math.max(0, Math.min(100, Number(discount) || 0)) / 100;
   const total = Math.max(0, subtotal + tax - discountAmount);
   const paid = total;
-  const due = 0;
   const filteredProducts = useMemo(() => products.filter(p => (category === 'All' || p.category === category) && p.name.toLowerCase().includes(search.toLowerCase())), [products, category, search]);
   const lowStock = inventory.filter(item => item.stock <= item.reorderLevel);
   const todayOrders = orders.filter(order => new Date(order.createdAt).toDateString() === new Date().toDateString() && order.number !== 'HOLD');
@@ -70,7 +68,7 @@ function App() {
   const addToCart = (product: Product) => {
     setCart(current => { const exists = current.find(item => item.productId === product.id); return exists ? current.map(item => item.productId === product.id ? { ...item, qty: item.qty + 1 } : item) : [...current, { id: `${product.id}-${Date.now()}`, productId: product.id, name: product.name, price: product.price, qty: 1 }]; });
   };
-  const clearCart = () => { setCart([]); setCash(''); setDiscount('0'); setNote(''); };
+  const clearCart = () => { setCart([]); setDiscount('0'); setNote(''); };
   const placeOrder = () => {
     if (!cart.length) { flash('Add at least one menu item first.'); return; }
     const number = nextNumber();
