@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Activity, ArrowDownRight, ArrowUpRight, BarChart3, Bell, Bike, BookOpen, Boxes, BriefcaseBusiness, CalendarDays, ChefHat, ChevronDown, CircleDollarSign, ClipboardList, Grid2X2, LayoutDashboard, LogOut, Menu, Package, Plus, Printer, Search, Settings, ShoppingBag, ShoppingCart, Sparkles, Table2, Users, Wallet, X } from 'lucide-react';
 import { categories, demoAuditLogs, demoCustomers, demoEmployees, demoInventory, demoOrders, demoProducts, demoSuppliers } from './data/demoData';
 import { type CartItem, type Customer, type InventoryItem, type Order, type OrderStatus, type PaymentMethod, type Product } from './types';
@@ -23,8 +23,8 @@ function App() {
   const [customers, setCustomers] = useState<Customer[]>(() => safeRead('musafir-customers', demoCustomers));
   const [orders, setOrders] = useState<Order[]>(() => safeRead('musafir-orders', demoOrders));
   const [cart, setCart] = useState<CartItem[]>(() => safeRead('musafir-cart', []));
-  const [employees] = useState(() => safeRead('musafir-employees', demoEmployees));
-  const [suppliers] = useState(() => safeRead('musafir-suppliers', demoSuppliers));
+  const [employees, setEmployees] = useState(() => safeRead('musafir-employees', demoEmployees));
+  const [suppliers, setSuppliers] = useState(() => safeRead('musafir-suppliers', demoSuppliers));
   const [logs, setLogs] = useState(() => safeRead('musafir-audit', demoAuditLogs));
   const [category, setCategory] = useState('All');
   const [search, setSearch] = useState('');
@@ -43,6 +43,8 @@ function App() {
   const [apiConnected, setApiConnected] = useState(false);
   const [apiBusy, setApiBusy] = useState(false);
   const [apiMessage, setApiMessage] = useState('');
+  const [backupMessage, setBackupMessage] = useState('');
+  const backupInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { save('musafir-products', products); }, [products]);
   useEffect(() => { save('musafir-inventory', inventory); }, [inventory]);
@@ -290,7 +292,60 @@ function App() {
     setApiToken(''); setApiBranchId(''); setApiConnected(false); setProducts(demoProducts);
     setApiMessage('Disconnected. POS is using local demo data.');
   };
-  const apiSettings = (): ReactNode => <section className={`${panel} max-w-2xl p-5 md:p-7`}>
+  const exportBackup = () => {
+    const backup = {
+      app: 'Musafir Fast Food POS',
+      formatVersion: 1,
+      exportedAt: new Date().toISOString(),
+      data: { products, inventory, customers, orders, cart, employees, suppliers, logs }
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `musafir-pos-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setBackupMessage('Backup file generated. Keep a copy outside this device.');
+  };
+  const importBackup = async (file?: File) => {
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      const data = parsed?.data;
+      const required = ['products', 'inventory', 'customers', 'orders', 'cart', 'employees', 'suppliers', 'logs'];
+      if (parsed?.app !== 'Musafir Fast Food POS' || parsed?.formatVersion !== 1 || !data || required.some(key => !Array.isArray(data[key]))) {
+        throw new Error('This is not a valid Musafir POS backup file.');
+      }
+      if (!window.confirm('Restore this backup? Current POS data on this device will be replaced.')) return;
+      setProducts(data.products);
+      setInventory(data.inventory);
+      setCustomers(data.customers);
+      setOrders(data.orders);
+      setCart(data.cart);
+      setEmployees(data.employees);
+      setSuppliers(data.suppliers);
+      setLogs(data.logs);
+      setBackupMessage('Backup restored on this device.');
+    } catch (error) {
+      setBackupMessage(error instanceof Error ? error.message : 'Backup could not be restored.');
+    } finally {
+      if (backupInputRef.current) backupInputRef.current.value = '';
+    }
+  };
+
+  const apiSettings = (): ReactNode => <div className="space-y-4"><section className={`${panel} max-w-2xl p-5 md:p-7`}>
+    <div className="mb-5">{heading('Local data protection','POS backup & restore','Export or restore this device’s saved POS records. Restore replaces the current local data.')}</div>
+    <div className="flex flex-wrap gap-2">
+      <button onClick={exportBackup} className="rounded-xl bg-[#e7b943] px-4 py-2.5 text-sm font-semibold text-[#17130b]">Export backup</button>
+      <button onClick={() => backupInputRef.current?.click()} className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-slate-300">Restore backup</button>
+      <input ref={backupInputRef} type="file" accept="application/json,.json" className="hidden" onChange={event => { void importBackup(event.target.files?.[0]); }} />
+    </div>
+    {backupMessage && <p role="status" className="mt-3 text-xs text-slate-300">{backupMessage}</p>}
+    <p className="mt-3 text-xs leading-5 text-amber-200/70">Backups contain saved orders, products, stock, customers, employees, suppliers and audit history. Store backup files securely. This does not copy data from the connected server database.</p>
+  </section><section className={`${panel} max-w-2xl p-5 md:p-7`}> className={`${panel} max-w-2xl p-5 md:p-7`}>
     <div className="mb-5">{heading('System integration','Backend connection','Connect this POS to the live Saudi branch database.')}</div>
     <label className="mb-1 block text-xs text-slate-400">Backend API URL</label>
     <input value={apiBase} onChange={event=>setApiBase(event.target.value)} placeholder="https://your-api-service.onrender.com" className="field mb-4 w-full"/>
@@ -305,7 +360,7 @@ function App() {
     <p className={`mt-4 text-xs ${apiConnected?'text-emerald-300':'text-slate-400'}`}>{apiConnected?'Connected: new checkouts are written to PostgreSQL.':'Not connected: checkout remains in local demo mode.'}</p>
     {apiMessage&&<p role="status" className="mt-2 rounded-lg bg-white/[.04] p-3 text-xs text-slate-300">{apiMessage}</p>}
     {apiConnected&&<p className="mt-3 text-[11px] text-slate-500">Branch ID: {apiBranchId}</p>}
-  </section>;
+  </section></div>;
   const holdOrder = () => {
     if (!cart.length) { flash('There is no order to hold.'); return; }
     const number = `H-${Date.now()}`;
