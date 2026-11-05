@@ -55,7 +55,7 @@ export const demoProducts: Product[] = [
     { ingredientId:'nugget', name:'Chicken nugget', qty:6, unit:'pieces' },
     { ingredientId:'oil', name:'Cooking oil', qty:20, unit:'ml' }
   ] },
-  { id: 'p8', name: 'Cold Coffee', category: 'Drinks', price: 120, image: 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=900&q=80', popularity: 78, recipe: [
+  { id: 'p8', name: 'Cold Coffee', category: 'Drinks', price: 12, image: 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=900&q=80', popularity: 78, recipe: [
     { ingredientId:'coffee', name:'Coffee mix', qty:80, unit:'ml' },
     { ingredientId:'milk', name:'Milk', qty:100, unit:'ml' },
     { ingredientId:'ice', name:'Ice', qty:40, unit:'g' }
