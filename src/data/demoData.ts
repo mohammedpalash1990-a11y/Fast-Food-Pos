@@ -119,7 +119,7 @@ export const demoOrders: Order[] = [
     customerName: 'Omar Hassan',
     items: [
       { id:'li3', productId:'p5', name:'Medium Pizza', qty:1, unitPrice:42 },
-      { id:'li4', productId:'p8', name:'Cold Coffee', qty:2, unitPrice:120 }
+      { id:'li4', productId:'p8', name:'Cold Coffee', qty:2, unitPrice:12 }
     ],
     subtotal: 66,
     tax: 9.9,
