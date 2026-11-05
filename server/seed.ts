@@ -10,8 +10,8 @@ try {
   let org = await client.query<{id:string}>('SELECT id FROM organizations WHERE slug=$1', ['musafir-demo']);
   if (!org.rowCount) org = await client.query<{id:string}>('INSERT INTO organizations(name,slug) VALUES($1,$2) RETURNING id', ['Musafir Fast Food','musafir-demo']);
   const organizationId = org.rows[0].id;
-  let branch = await client.query<{id:string}>('SELECT id FROM branches WHERE organization_id=$1 AND code=$2', [organizationId,'DHK-01']);
-  if (!branch.rowCount) branch = await client.query<{id:string}>('INSERT INTO branches(organization_id,name,code) VALUES($1,$2,$3) RETURNING id', [organizationId,'Dhaka Main','DHK-01']);
+  let branch = await client.query<{id:string}>('SELECT id FROM branches WHERE organization_id=$1 AND code=$2', [organizationId,'KSA-01']);
+  if (!branch.rowCount) branch = await client.query<{id:string}>('INSERT INTO branches(organization_id,name,code) VALUES($1,$2,$3) RETURNING id', [organizationId,'Saudi Main','KSA-01']);
   const branchId = branch.rows[0].id;
   const hash = await bcrypt.hash(password, 12);
   await client.query(`INSERT INTO users(organization_id,email,password_hash,display_name,role,branch_id) VALUES($1,$2,$3,$4,'owner',$5) ON CONFLICT(organization_id,email) DO NOTHING`, [organizationId,email.toLowerCase(),hash,'Restaurant Owner',branchId]);
@@ -22,23 +22,23 @@ try {
   const cats = ['Burgers','Pizza','Sandwiches','Fried Chicken','French Fries','Chicken Nuggets','Pasta','Snacks','Drinks','Desserts','Combo Meals'];
   for (const name of cats) await client.query('INSERT INTO categories(organization_id,name) VALUES($1,$2) ON CONFLICT(organization_id,name) DO NOTHING',[organizationId,name]);
   const menu = [
-    ['p1','Chicken Burger','Burgers',180,'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=900&q=80',[['bun',1],['patty',1],['cheese',20],['lettuce',20],['sauce',15]]],
-    ['p2','Beef Burger','Burgers',220,'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=900&q=80',[['bun',1],['beef',1],['cheese',20],['lettuce',20]]],
-    ['p3','Zinger Burger','Burgers',240,'https://images.unsplash.com/photo-1520072959219-c595dc870360?auto=format&fit=crop&w=900&q=80',[['bun',1],['zinger',1],['cheese',20],['lettuce',20]]],
-    ['p4','Regular Pizza','Pizza',320,'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=900&q=80',[['dough',1],['sauce',40],['cheese',80],['tomato',30]]],
-    ['p5','Medium Pizza','Pizza',420,'https://images.unsplash.com/photo-1548365328-9f547fb9587c?auto=format&fit=crop&w=900&q=80',[['dough',1],['sauce',50],['cheese',100],['tomato',40]]],
-    ['p6','French Fries','French Fries',120,'https://images.unsplash.com/photo-1576107232684-1279f390859f?auto=format&fit=crop&w=900&q=80',[['potato',250],['oil',20],['salt',5]]],
-    ['p7','Chicken Nuggets','Chicken Nuggets',160,'https://images.unsplash.com/photo-1562967916-eb82221dfb92?auto=format&fit=crop&w=900&q=80',[['nugget',6],['oil',20]]],
-    ['p8','Cold Coffee','Drinks',120,'https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=900&q=80',[['coffee',80],['milk',100],['ice',40]]],
-    ['p9','Coca-Cola','Drinks',80,'https://images.unsplash.com/photo-1622483767028-3f66f2b7420a?auto=format&fit=crop&w=900&q=80',[['coke',1]]],
-    ['p10','Chicken Combo','Combo Meals',350,'https://images.unsplash.com/photo-1559847844-5315695dadae?auto=format&fit=crop&w=900&q=80',[['bun',1],['patty',1],['potato',250],['oil',20],['coke',1]]]
+    ['p1','Chicken Burger','Burgers',18,'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=900&q=80',[['bun',1],['patty',1],['cheese',20],['lettuce',20],['sauce',15]]],
+    ['p2','Beef Burger','Burgers',22,'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=900&q=80',[['bun',1],['beef',1],['cheese',20],['lettuce',20]]],
+    ['p3','Zinger Burger','Burgers',24,'https://images.unsplash.com/photo-1520072959219-c595dc870360?auto=format&fit=crop&w=900&q=80',[['bun',1],['zinger',1],['cheese',20],['lettuce',20]]],
+    ['p4','Regular Pizza','Pizza',32,'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=900&q=80',[['dough',1],['sauce',40],['cheese',80],['tomato',30]]],
+    ['p5','Medium Pizza','Pizza',42,'https://images.unsplash.com/photo-1548365328-9f547fb9587c?auto=format&fit=crop&w=900&q=80',[['dough',1],['sauce',50],['cheese',100],['tomato',40]]],
+    ['p6','French Fries','French Fries',12,'https://images.unsplash.com/photo-1576107232684-1279f390859f?auto=format&fit=crop&w=900&q=80',[['potato',250],['oil',20],['salt',5]]],
+    ['p7','Chicken Nuggets','Chicken Nuggets',16,'https://images.unsplash.com/photo-1562967916-eb82221dfb92?auto=format&fit=crop&w=900&q=80',[['nugget',6],['oil',20]]],
+    ['p8','Cold Coffee','Drinks',12,'https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=900&q=80',[['coffee',80],['milk',100],['ice',40]]],
+    ['p9','Coca-Cola','Drinks',8,'https://images.unsplash.com/photo-1622483767028-3f66f2b7420a?auto=format&fit=crop&w=900&q=80',[['coke',1]]],
+    ['p10','Chicken Combo','Combo Meals',35,'https://images.unsplash.com/photo-1559847844-5315695dadae?auto=format&fit=crop&w=900&q=80',[['bun',1],['patty',1],['potato',250],['oil',20],['coke',1]]]
   ] as const;
   for (const [sku,name,category,price,image,recipe] of menu) {
     const product = await client.query<{id:string}>('INSERT INTO products(organization_id,category_id,sku,name,price,image_url) SELECT $1,id,$2,$3,$4,$5 FROM categories WHERE organization_id=$1 AND name=$6 ON CONFLICT(organization_id,sku) DO UPDATE SET name=EXCLUDED.name RETURNING id',[organizationId,sku,name,price,image,category]);
     for (const [ingredientSku,quantity] of recipe) await client.query('INSERT INTO recipes(product_id,ingredient_id,quantity) SELECT $1,id,$3 FROM ingredients WHERE branch_id=$2 AND sku=$4 ON CONFLICT(product_id,ingredient_id) DO UPDATE SET quantity=EXCLUDED.quantity',[product.rows[0].id,branchId,quantity,ingredientSku]);
   }
-  for (const [name,phone,address] of [['Nadia Rahman','01711223344','Gulshan, Dhaka'],['Imran Ali','01833445566','Dhanmondi, Dhaka'],['Farah Khan','01677889900','Bashundhara, Dhaka']]) await client.query('INSERT INTO customers(organization_id,name,phone,address) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[organizationId,name,phone,address]);
-  for (const [name,phone,category] of [['Baker Supply','01710000001','Bakery'],['Prime Poultry','01810000002','Meat'],['Fresh Dairy','01910000003','Dairy']]) await client.query('INSERT INTO suppliers(organization_id,name,phone,category) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[organizationId,name,phone,category]);
+  for (const [name,phone,address] of [['Sara Ahmed','+966500000001','Riyadh, Saudi Arabia'],['Omar Hassan','+966500000002','Jeddah, Saudi Arabia'],['Lina Ali','+966500000003','Dammam, Saudi Arabia']]) await client.query('INSERT INTO customers(organization_id,name,phone,address) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[organizationId,name,phone,address]);
+  for (const [name,phone,category] of [['Saudi Bakery Supply','+966500000101','Bakery'],['Prime Poultry KSA','+966500000102','Meat'],['Fresh Dairy KSA','+966500000103','Dairy']]) await client.query('INSERT INTO suppliers(organization_id,name,phone,category) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[organizationId,name,phone,category]);
   await client.query('COMMIT');
   console.log(`Seed complete. Admin: ${email}. Change the seed password after first sign-in.`);
 } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); await pool.end(); }
