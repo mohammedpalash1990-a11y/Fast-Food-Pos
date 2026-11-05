@@ -51,6 +51,8 @@ function App() {
   useEffect(() => { save('musafir-customers', customers); }, [customers]);
   useEffect(() => { save('musafir-orders', orders); }, [orders]);
   useEffect(() => { save('musafir-cart', cart); }, [cart]);
+  useEffect(() => { save('musafir-employees', employees); }, [employees]);
+  useEffect(() => { save('musafir-suppliers', suppliers); }, [suppliers]);
   useEffect(() => { save('musafir-audit', logs); }, [logs]);
 
   useEffect(() => {
