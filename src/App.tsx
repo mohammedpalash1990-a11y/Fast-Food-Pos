@@ -1,38 +1,47 @@
-import { useEffect, useMemo, useState } from 'react';
-import { categories, demoAuditLogs, demoCustomers, demoEmployees, demoInventory, demoOrders, demoProducts, demoSuppliers } from './data/demoData';
-import { type CartItem, type Customer, type Employee, type InventoryItem, type Order, type OrderStatus, type PaymentMethod, type Product, type Supplier } from './types';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  categories,
+  demoAuditLogs,
+  demoCustomers,
+  demoEmployees,
+  demoInventory,
+  demoOrders,
+  demoProducts,
+  demoSuppliers
+} from './data/demoData';
+import {
+  type CartItem,
+  type Customer,
+  type Employee,
+  type InventoryItem,
+  type Order,
+  type OrderStatus,
+  type PaymentMethod,
+  type Product,
+  type Supplier
+} from './types';
 
 const currency = (value: number) => `৳${value.toLocaleString()}`;
 
-const storage = {
-  read<T>(key: string, fallback: T): T {
-    const item = localStorage.getItem(key);
-    if (!item) return fallback;
-    try {
-      return JSON.parse(item) as T;
-    } catch {
-      return fallback;
-    }
-  },
-  write<T>(key: string, value: T) {
-    localStorage.setItem(key, JSON.stringify(value));
+const readStorage = <T,>(key: string, fallback: T): T => {
+  const raw = localStorage.getItem(key);
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
   }
 };
 
-const nextOrderNumber = () => {
-  const current = storage.read<number>('musafir-last-order', 1000);
-  const next = current + 1;
-  storage.write('musafir-last-order', next);
-  return String(next);
+const writeStorage = <T,>(key: string, value: T) => {
+  localStorage.setItem(key, JSON.stringify(value));
 };
 
-const getInventoryAvailability = (product: Product, inventory: InventoryItem[]) => {
-  const required = product.recipe;
-  return required.every((item) => {
-    const stockItem = inventory.find((x) => x.name.toLowerCase() === item.name.toLowerCase());
-    if (!stockItem) return false;
-    return stockItem.stock >= item.qty;
-  });
+const nextOrderNumber = () => {
+  const current = readStorage<number>('musafir-last-order', 1000);
+  const next = current + 1;
+  writeStorage('musafir-last-order', next);
+  return String(next);
 };
 
 const cycleStatus = (status: OrderStatus): OrderStatus => {
@@ -41,18 +50,30 @@ const cycleStatus = (status: OrderStatus): OrderStatus => {
   return steps[(index + 1) % steps.length];
 };
 
+const navItems = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'pos', label: 'POS / Billing' },
+  { id: 'orders', label: 'Orders' },
+  { id: 'kitchen', label: 'Kitchen Display' },
+  { id: 'inventory', label: 'Inventory' },
+  { id: 'customers', label: 'Customers' },
+  { id: 'accounting', label: 'Accounting' },
+  { id: 'qr', label: 'QR Menu' },
+  { id: 'settings', label: 'Settings' }
+];
+
 function App() {
   const [selectedView, setSelectedView] = useState('dashboard');
-  const [products, setProducts] = useState<Product[]>(() => storage.read('musafir-products', demoProducts));
-  const [inventory, setInventory] = useState<InventoryItem[]>(() => storage.read('musafir-inventory', demoInventory));
-  const [customers, setCustomers] = useState<Customer[]>(() => storage.read('musafir-customers', demoCustomers));
-  const [orders, setOrders] = useState<Order[]>(() => storage.read('musafir-orders', demoOrders));
-  const [employees, setEmployees] = useState<Employee[]>(() => storage.read('musafir-employees', demoEmployees));
-  const [suppliers, setSuppliers] = useState<Supplier[]>(() => storage.read('musafir-suppliers', demoSuppliers));
-  const [auditLogs, setAuditLogs] = useState(() => storage.read('musafir-audit', demoAuditLogs));
+  const [products, setProducts] = useState<Product[]>(() => readStorage('musafir-products', demoProducts));
+  const [inventory, setInventory] = useState<InventoryItem[]>(() => readStorage('musafir-inventory', demoInventory));
+  const [customers, setCustomers] = useState<Customer[]>(() => readStorage('musafir-customers', demoCustomers));
+  const [orders, setOrders] = useState<Order[]>(() => readStorage('musafir-orders', demoOrders));
+  const [employees, setEmployees] = useState<Employee[]>(() => readStorage('musafir-employees', demoEmployees));
+  const [suppliers, setSuppliers] = useState<Supplier[]>(() => readStorage('musafir-suppliers', demoSuppliers));
+  const [auditLogs, setAuditLogs] = useState(() => readStorage('musafir-audit', demoAuditLogs));
   const [searchTerm, setSearchTerm] = useState('');
   const [currentCategory, setCurrentCategory] = useState('All');
-  const [cart, setCart] = useState<CartItem[]>(() => storage.read('musafir-cart', []));
+  const [cart, setCart] = useState<CartItem[]>(() => readStorage('musafir-cart', []));
   const [orderType, setOrderType] = useState<Order['type']>('Dine-in');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [cashTendered, setCashTendered] = useState(0);
@@ -60,24 +81,36 @@ function App() {
   const [specialNote, setSpecialNote] = useState('');
 
   useEffect(() => {
-    storage.write('musafir-products', products);
+    writeStorage('musafir-products', products);
   }, [products]);
 
   useEffect(() => {
-    storage.write('musafir-inventory', inventory);
+    writeStorage('musafir-inventory', inventory);
   }, [inventory]);
 
   useEffect(() => {
-    storage.write('musafir-inventory', inventory);
-  }, [inventory]);
-
-  useEffect(() => {
-    storage.write('musafir-orders', orders);
+    writeStorage('musafir-orders', orders);
   }, [orders]);
 
   useEffect(() => {
-    storage.write('musafir-cart', cart);
+    writeStorage('musafir-cart', cart);
   }, [cart]);
+
+  useEffect(() => {
+    writeStorage('musafir-customers', customers);
+  }, [customers]);
+
+  useEffect(() => {
+    writeStorage('musafir-employees', employees);
+  }, [employees]);
+
+  useEffect(() => {
+    writeStorage('musafir-suppliers', suppliers);
+  }, [suppliers]);
+
+  useEffect(() => {
+    writeStorage('musafir-audit', auditLogs);
+  }, [auditLogs]);
 
   const visibleProducts = useMemo(() => {
     return products.filter((product) => {
@@ -91,7 +124,7 @@ function App() {
   const taxValue = cartSubtotal * 0.05;
   const discountValue = (cartSubtotal + taxValue) * (discountPercent / 100);
   const total = cartSubtotal + taxValue - discountValue;
-  const paidAmount = paymentMethod === 'Cash' ? Math.min(cashTendered, total) : total;
+  const paidAmount = paymentMethod === 'Cash' ? Math.min(cashTendered || total, total) : total;
   const dueAmount = Math.max(total - paidAmount, 0);
 
   const stats = useMemo(() => {
@@ -100,20 +133,29 @@ function App() {
       const today = new Date().toDateString();
       return new Date(order.createdAt).toDateString() === today ? sum + order.total : sum;
     }, 0);
-    const customerCount = customers.length;
-    const expenseTotal = employees.reduce((sum, employee) => sum + employee.salary, 0) / 12;
-    const profit = revenue * 0.32;
-    return { revenue, todaySales, customerCount, expenseTotal, profit };
+
+    const expenseTotal = employees.reduce((sum, employee) => sum + employee.salary, 0) * 0.08;
+    const profit = orders.reduce((sum, order) => sum + order.total, 0) * 0.34;
+
+    return {
+      revenue,
+      todaySales,
+      customerCount: customers.length,
+      expenseTotal,
+      profit
+    };
   }, [orders, customers, employees]);
 
+  const lowStockItems = inventory.filter((item) => item.stock <= item.reorderLevel);
+
   const addItemToCart = (product: Product) => {
-    const inventoryForRecipe = product.recipe.every((ingredient) => {
-      const stockItem = inventory.find((item) => item.name.toLowerCase() === ingredient.name.toLowerCase());
+    const enoughStock = product.recipe.every((ingredient) => {
+      const stockItem = inventory.find((entry) => entry.name.toLowerCase() === ingredient.name.toLowerCase());
       return !!stockItem && stockItem.stock >= ingredient.qty;
     });
 
-    if (!inventoryForRecipe) {
-      alert('Not enough stock to fulfill this menu item. Please restock from inventory.');
+    if (!enoughStock) {
+      alert('Not enough stock for this menu item. Please restock before selling it.');
       return;
     }
 
@@ -131,31 +173,29 @@ function App() {
   const updateQty = (productId: string, delta: number) => {
     setCart((current) =>
       current
-        .map((item) =>
-          item.productId === productId ? { ...item, qty: Math.max(0, item.qty + delta) } : item
-        )
+        .map((item) => (item.productId === productId ? { ...item, qty: Math.max(0, item.qty + delta) } : item))
         .filter((item) => item.qty > 0)
     );
   };
 
   const clearCart = () => {
     setCart([]);
-    setDiscountPercent(0);
     setCashTendered(0);
-    setPaymentMethod('Cash');
+    setDiscountPercent(0);
     setSpecialNote('');
+    setPaymentMethod('Cash');
   };
 
   const placeOrder = () => {
     if (!cart.length) return;
 
-    const orderTotal = total;
-    const paid = paymentMethod === 'Cash' ? Math.min(cashTendered || orderTotal, orderTotal) : orderTotal;
-    const due = Math.max(orderTotal - paid, 0);
+    const orderNumber = nextOrderNumber();
+    const paid = paymentMethod === 'Cash' ? Math.min(cashTendered || total, total) : total;
+    const due = Math.max(total - paid, 0);
 
     const newOrder: Order = {
-      id: `o-${nextOrderNumber()}`,
-      number: String(nextOrderNumber()),
+      id: `o-${orderNumber}`,
+      number: orderNumber,
       type: orderType,
       status: 'Pending',
       createdAt: new Date().toISOString(),
@@ -171,7 +211,7 @@ function App() {
       subtotal: cartSubtotal,
       tax: taxValue,
       discount: discountValue,
-      total: orderTotal,
+      total,
       paid,
       due,
       paymentMethod,
@@ -180,59 +220,56 @@ function App() {
 
     setOrders((current) => [newOrder, ...current]);
 
+    const deductionMap = new Map<string, number>();
+    cart.forEach((entry) => {
+      const product = products.find((item) => item.id === entry.productId);
+      if (!product) return;
+      product.recipe.forEach((ingredient) => {
+        const key = ingredient.name.toLowerCase();
+        deductionMap.set(key, (deductionMap.get(key) ?? 0) + ingredient.qty * entry.qty);
+      });
+    });
+
     setInventory((current) =>
-      current.map((stockItem) => {
-        const matchedProduct = cart
-          .map((item) => products.find((product) => product.id === item.productId))
-          .filter(Boolean) as Product[];
-
-        let quantityDeduction = 0;
-        for (const product of matchedProduct) {
-          const cartItem = cart.find((entry) => entry.productId === product.id);
-          if (!cartItem) continue;
-          for (const ingredient of product.recipe) {
-            if (stockItem.name.toLowerCase() === ingredient.name.toLowerCase()) {
-              quantityDeduction += ingredient.qty * cartItem.qty;
-            }
-          }
-        }
-
-        if (stockItem.name.toLowerCase() === 'burger bun'.toLowerCase()) {
-          // this branch is intentionally left as part of the recipe deduction flow
-        }
-
-        return stockItem.name.toLowerCase() === 'burger bun'.toLowerCase() || quantityDeduction > 0
-          ? {
-              ...stockItem,
-              stock: Math.max(0, stockItem.stock - quantityDeduction)
-            }
-          : stockItem;
+      current.map((item) => {
+        const deduction = deductionMap.get(item.name.toLowerCase()) ?? 0;
+        if (deduction === 0) return item;
+        return { ...item, stock: Math.max(0, item.stock - deduction) };
       })
     );
 
-    clearCart();
-    setSelectedView('orders');
     setAuditLogs((current) => [
       {
         id: `log-${Date.now()}`,
-        title: 'New order placed',
-        detail: `${newOrder.number} created for ${newOrder.customerName}.`,
+        title: 'Order created',
+        detail: `Order #${newOrder.number} was placed for ${newOrder.customerName}.`,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       },
       ...current
     ]);
+
+    clearCart();
+    setSelectedView('orders');
   };
 
   const holdOrder = () => {
     if (!cart.length) return;
-    const held = {
+
+    const holdOrderEntry: Order = {
       id: `hold-${Date.now()}`,
       number: 'HOLD',
       type: orderType,
-      status: 'Pending' as OrderStatus,
+      status: 'Pending',
       createdAt: new Date().toISOString(),
       customerName: 'Held Order',
-      items: cart.map((item) => ({ id: item.id, productId: item.productId, name: item.name, qty: item.qty, unitPrice: item.price })),
+      items: cart.map((item) => ({
+        id: `${item.id}-hold`,
+        productId: item.productId,
+        name: item.name,
+        qty: item.qty,
+        unitPrice: item.price,
+        note: specialNote || undefined
+      })),
       subtotal: cartSubtotal,
       tax: taxValue,
       discount: discountValue,
@@ -243,7 +280,7 @@ function App() {
       kitchenNote: specialNote || undefined
     };
 
-    setOrders((current) => [held, ...current]);
+    setOrders((current) => [holdOrderEntry, ...current]);
     clearCart();
     setSelectedView('orders');
   };
@@ -256,19 +293,17 @@ function App() {
     );
   };
 
-  const lowStockItems = inventory.filter((item) => item.stock <= item.reorderLevel);
-
-  const renderDashboard = () => (
+  const renderDashboard = (): ReactNode => (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-brand-200">Control center</p>
+          <p className="text-xs uppercase tracking-[0.35em] text-brand-200">Control center</p>
           <h2 className="text-3xl font-bold text-white">Dashboard Overview</h2>
         </div>
         <div className="flex gap-2 text-xs text-slate-300">
-          <button className="rounded-full border border-brand-300/40 bg-brand-500/10 px-3 py-2 text-brand-100">Today</button>
-          <button className="rounded-full border border-slate-700 bg-slate-900 px-3 py-2">This week</button>
-          <button className="rounded-full border border-slate-700 bg-slate-900 px-3 py-2">This month</button>
+          <button className="rounded-full border border-brand-300/35 bg-brand-500/10 px-3 py-2 text-brand-100">Today</button>
+          <button className="rounded-full border border-slate-700 bg-slate-900 px-3 py-2">Week</button>
+          <button className="rounded-full border border-slate-700 bg-slate-900 px-3 py-2">Month</button>
         </div>
       </div>
 
@@ -276,7 +311,7 @@ function App() {
         {[
           { label: 'Today Sales', value: currency(stats.todaySales), change: '+12.5%' },
           { label: 'Total Orders', value: String(orders.length), change: '+8.3%' },
-          { label: 'Total Customers', value: String(stats.customerCount), change: '+10.1%' },
+          { label: 'Total Customers', value: String(customers.length), change: '+10.1%' },
           { label: 'Gross Profit', value: currency(stats.profit), change: '+14.2%' }
         ].map((card) => (
           <div key={card.label} className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5 shadow-soft">
@@ -296,10 +331,10 @@ function App() {
             <span className="text-sm text-slate-400">Last 7 days</span>
           </div>
           <div className="grid h-56 grid-cols-7 items-end gap-3">
-            {[52, 68, 44, 92, 76, 108, 130].map((height, idx) => (
-              <div key={idx} className="flex flex-col items-center gap-3">
+            {[52, 68, 44, 92, 76, 108, 130].map((height, index) => (
+              <div key={index} className="flex flex-col items-center gap-3">
                 <div className="w-full rounded-t-2xl bg-gradient-to-t from-brand-500 to-brand-300" style={{ height: `${height}px` }} />
-                <span className="text-xs text-slate-400">{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][idx]}</span>
+                <span className="text-xs text-slate-400">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index]}</span>
               </div>
             ))}
           </div>
@@ -311,7 +346,7 @@ function App() {
             <span className="text-sm text-brand-200">This week</span>
           </div>
           <div className="space-y-4">
-            {['Chicken Burger','French Fries','Cold Coffee','Pizza Slice'].map((item, idx) => (
+            {['Chicken Burger', 'French Fries', 'Cold Coffee', 'Pizza Slice'].map((item, idx) => (
               <div key={item} className="flex items-center justify-between rounded-2xl bg-slate-800 p-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500/15 text-lg text-brand-200">{idx + 1}</div>
@@ -331,7 +366,7 @@ function App() {
         <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-xl font-semibold text-white">Recent Orders</h3>
-            <button className="rounded-full border border-brand-300/40 bg-brand-500/10 px-3 py-1.5 text-xs text-brand-100">View all</button>
+            <button className="rounded-full border border-brand-300/35 bg-brand-500/10 px-3 py-1.5 text-xs text-brand-100">View all</button>
           </div>
           <div className="space-y-3">
             {orders.slice(0, 5).map((order) => (
@@ -373,17 +408,17 @@ function App() {
     </div>
   );
 
-  const renderPos = () => (
+  const renderPos = (): ReactNode => (
     <div className="grid gap-6 xl:grid-cols-[1.5fr_0.8fr]">
       <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
         <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <h2 className="text-2xl font-bold text-white">POS / Billing</h2>
           <div className="flex gap-2">
-            {['Dine-in','Takeaway','Pickup','Home Delivery'].map((choice) => (
+            {['Dine-in', 'Takeaway', 'Pickup', 'Home Delivery'].map((choice) => (
               <button
                 key={choice}
-                className={`rounded-full px-3 py-2 text-xs font-medium ${orderType === choice ? 'bg-brand-500 text-slate-900' : 'border border-slate-700 bg-slate-800 text-slate-300'}`}
                 onClick={() => setOrderType(choice as Order['type'])}
+                className={`rounded-full px-3 py-2 text-xs font-medium ${orderType === choice ? 'bg-brand-500 text-slate-900' : 'border border-slate-700 bg-slate-800 text-slate-300'}`}
               >
                 {choice}
               </button>
@@ -476,8 +511,8 @@ function App() {
           <label className="block text-sm text-slate-300">Special instructions</label>
           <textarea value={specialNote} onChange={(event) => setSpecialNote(event.target.value)} rows={2} className="w-full rounded-2xl border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100" />
           <div className="grid grid-cols-3 gap-2">
-            {(['Cash','Card','Digital'] as PaymentMethod[]).map((method) => (
-              <button key={method} onClick={() => setPaymentMethod(method)} className={`rounded-xl border px-3 py-2 text-sm ${paymentMethod===method ? 'border-brand-400 bg-brand-500/10 text-brand-100' : 'border-slate-700 bg-slate-800 text-slate-300'}`}>
+            {(['Cash', 'Card', 'Digital'] as PaymentMethod[]).map((method) => (
+              <button key={method} onClick={() => setPaymentMethod(method)} className={`rounded-xl border px-3 py-2 text-sm ${paymentMethod === method ? 'border-brand-400 bg-brand-500/10 text-brand-100' : 'border-slate-700 bg-slate-800 text-slate-300'}`}>
                 {method}
               </button>
             ))}
@@ -491,6 +526,10 @@ function App() {
               className="w-full rounded-2xl border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100"
             />
           )}
+          <div className="rounded-xl bg-slate-800 p-3 text-sm text-slate-300">
+            <div className="flex items-center justify-between"><span>Paid</span><span>{currency(paidAmount)}</span></div>
+            <div className="mt-1 flex items-center justify-between"><span>Due</span><span>{currency(dueAmount)}</span></div>
+          </div>
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-3">
@@ -502,7 +541,7 @@ function App() {
     </div>
   );
 
-  const renderOrders = () => (
+  const renderOrders = (): ReactNode => (
     <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
       <div className="mb-5 flex items-center justify-between">
         <h2 className="text-2xl font-bold text-white">Orders</h2>
@@ -523,7 +562,7 @@ function App() {
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {order.items.map((item) => (
-                <div key={item.productId} className="rounded-xl border border-slate-700 bg-slate-900 p-3">
+                <div key={`${order.id}-${item.productId}`} className="rounded-xl border border-slate-700 bg-slate-900 p-3">
                   <div className="font-medium text-white">{item.name}</div>
                   <div className="text-sm text-slate-400">Qty: {item.qty}</div>
                 </div>
@@ -541,7 +580,7 @@ function App() {
     </div>
   );
 
-  const renderKitchen = () => (
+  const renderKitchen = (): ReactNode => (
     <div className="space-y-6">
       <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
         <div className="mb-5 flex items-center justify-between">
@@ -549,7 +588,7 @@ function App() {
           <span className="rounded-full bg-brand-500/10 px-3 py-1 text-xs text-brand-100">Live Orders</span>
         </div>
         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-          {['Pending','Accepted','Preparing','Ready','Completed'].map((status) => (
+          {['Pending', 'Accepted', 'Preparing', 'Ready', 'Completed'].map((status) => (
             <div key={status} className="rounded-2xl border border-slate-700 bg-slate-800 p-4">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="font-semibold text-white">{status}</h3>
@@ -564,7 +603,7 @@ function App() {
                     </div>
                     <div className="space-y-1 text-sm text-slate-300">
                       {order.items.map((item) => (
-                        <div key={item.productId}>{item.qty}x {item.name}</div>
+                        <div key={`${order.id}-${item.productId}-kitchen`}>{item.qty}x {item.name}</div>
                       ))}
                     </div>
                     <div className="mt-3 text-xs text-slate-400">{order.kitchenNote || 'No special note'}</div>
@@ -581,7 +620,7 @@ function App() {
     </div>
   );
 
-  const renderInventory = () => (
+  const renderInventory = (): ReactNode => (
     <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
       <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
         <div className="mb-5 flex items-center justify-between">
@@ -615,7 +654,7 @@ function App() {
               <div className="mb-2 font-medium text-white">{product.name}</div>
               <div className="space-y-2 text-sm text-slate-300">
                 {product.recipe.map((ingredient) => (
-                  <div key={ingredient.ingredientId} className="flex justify-between"><span>{ingredient.name}</span><span>{ingredient.qty}{ingredient.unit}</span></div>
+                  <div key={`${product.id}-${ingredient.ingredientId}`} className="flex justify-between"><span>{ingredient.name}</span><span>{ingredient.qty}{ingredient.unit}</span></div>
                 ))}
               </div>
             </div>
@@ -625,7 +664,7 @@ function App() {
     </div>
   );
 
-  const renderCustomers = () => (
+  const renderCustomers = (): ReactNode => (
     <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
       <div className="mb-5 flex items-center justify-between">
         <h2 className="text-2xl font-bold text-white">Customers</h2>
@@ -650,18 +689,19 @@ function App() {
     </div>
   );
 
-  const renderAccounting = () => (
+  const renderAccounting = (): ReactNode => (
     <div className="grid gap-6 xl:grid-cols-2">
       <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
         <h2 className="text-2xl font-bold text-white">Finance Overview</h2>
         <div className="mt-5 space-y-4 text-sm text-slate-300">
           <div className="flex justify-between"><span>Daily sales</span><span>{currency(stats.todaySales)}</span></div>
           <div className="flex justify-between"><span>Total purchases</span><span>{currency(228000)}</span></div>
-          <div className="flex justify-between"><span>Operating expenses</span><span>{currency(42000)}</span></div>
+          <div className="flex justify-between"><span>Operating expenses</span><span>{currency(stats.expenseTotal)}</span></div>
           <div className="flex justify-between"><span>Gross profit</span><span>{currency(stats.profit)}</span></div>
           <div className="flex justify-between"><span>Net profit</span><span>{currency(stats.profit * 0.72)}</span></div>
         </div>
       </div>
+
       <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
         <h2 className="text-2xl font-bold text-white">Supplier Due</h2>
         <div className="mt-5 space-y-4 text-sm text-slate-300">
@@ -679,12 +719,12 @@ function App() {
     </div>
   );
 
-  const renderSettings = () => (
+  const renderSettings = (): ReactNode => (
     <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
       <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
         <h2 className="text-2xl font-bold text-white">Roles & Permissions</h2>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
-          {['Super Admin','Restaurant Owner','Manager','Cashier','Kitchen Staff','Inventory Manager','Accountant','Delivery Staff'].map((role) => (
+          {['Super Admin', 'Restaurant Owner', 'Manager', 'Cashier', 'Kitchen Staff', 'Inventory Manager', 'Accountant', 'Delivery Staff'].map((role) => (
             <div key={role} className="rounded-2xl border border-slate-700 bg-slate-800 p-4">
               <div className="mb-2 font-semibold text-white">{role}</div>
               <div className="text-sm text-slate-300">{role === 'Super Admin' ? 'Full access' : role === 'Cashier' ? 'POS + orders' : role === 'Kitchen Staff' ? 'KDS view' : 'Operational access'}</div>
@@ -708,7 +748,7 @@ function App() {
     </div>
   );
 
-  const renderQrMenu = () => (
+  const renderQrMenu = (): ReactNode => (
     <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
       <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
         <h2 className="text-2xl font-bold text-white">QR Menu Ordering</h2>
@@ -737,7 +777,7 @@ function App() {
     </div>
   );
 
-  const views: Record<string, React.ReactNode> = {
+  const views: Record<string, ReactNode> = {
     dashboard: renderDashboard(),
     pos: renderPos(),
     orders: renderOrders(),
@@ -746,23 +786,11 @@ function App() {
     customers: renderCustomers(),
     accounting: renderAccounting(),
     settings: renderSettings(),
-    qr: renderQrMenu(),
+    qr: renderQrMenu()
   };
 
-  const navItems = [
-    { id: 'dashboard', label: 'Dashboard' },
-    { id: 'pos', label: 'POS / Billing' },
-    { id: 'orders', label: 'Orders' },
-    { id: 'kitchen', label: 'Kitchen Display' },
-    { id: 'inventory', label: 'Inventory' },
-    { id: 'customers', label: 'Customers' },
-    { id: 'accounting', label: 'Accounting' },
-    { id: 'qr', label: 'QR Menu' },
-    { id: 'settings', label: 'Settings' }
-  ];
-
   return (
-    <div className="min-h-screen bg-shell bg-hero text-slate-100">
+    <div className="min-h-screen bg-shell text-slate-100">
       <div className="mx-auto max-w-[1500px] px-4 py-6 lg:px-6">
         <header className="mb-6 flex flex-col gap-5 rounded-[28px] border border-slate-700 bg-[#121821]/90 p-4 shadow-soft md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-4">
@@ -780,7 +808,7 @@ function App() {
 
           <div className="flex items-center gap-3 text-sm text-slate-200">
             <div className="rounded-full bg-brand-500/10 px-3 py-2 text-brand-100">Online</div>
-            <div className="rounded-full border border-slate-700 bg-slate-900 px-3 py-2">6:00 PM</div>
+            <div className="rounded-full border border-slate-700 bg-slate-900 px-3 py-2">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
           </div>
         </header>
 
@@ -807,9 +835,7 @@ function App() {
             </nav>
           </aside>
 
-          <main className="space-y-6">
-            {views[selectedView]}
-          </main>
+          <main className="space-y-6">{views[selectedView]}</main>
         </div>
       </div>
     </div>
