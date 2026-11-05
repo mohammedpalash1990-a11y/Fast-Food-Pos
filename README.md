@@ -1,44 +1,31 @@
-# Musafir Fast Food POS & Management System
+# Musafir Fast Food POS
 
-A premium restaurant POS and management system built with React + TypeScript + Vite + Tailwind CSS.
+A restaurant operations demo built with React, TypeScript, Vite, Tailwind CSS, and local browser persistence. Visual design follows the charcoal-and-gold Musafir reference.
 
-## Features included
+## Run locally
 
-- Premium dark and gold restaurant dashboard inspired by the concept layout
-- Functional POS / billing flow with cart, discount, tax, and payment selection
-- Orders and kitchen workflow status management
-- Inventory tracking and recipe-based stock deductions
-- Customer, supplier, accounting, and audit panels
-- QR menu mock interface for table ordering
-- Local browser persistence for demo data and offline-ready workflow scaffolding
-
-## Stack
-
-- React 18
-- TypeScript
-- Vite
-- Tailwind CSS
-
-## Quick start
-
-```bash
+```sh
 npm install
-npm run dev -- --host 0.0.0.0
+npm run dev
 ```
 
-Then open the local URL shown in the terminal, typically:
+Open the Vite URL (usually `http://localhost:5173`). To create a production bundle, run `npm run build`.
 
-```bash
-http://localhost:5173
-```
+## Current working demo
 
-## Production build
+- Responsive charcoal-and-gold admin shell with all 26 requested navigation modules listed.
+- Dashboard sales totals, daily order count, and best sellers derived from browser-stored order records.
+- POS menu search and category filters, order types, cart quantity controls, tax/discount calculation, payment methods, hold/resume, and browser print.
+- Orders and kitchen status workflow.
+- Inventory list and manual receive-stock operation.
+- Customer list and add-customer flow.
+- QR menu preview and supplier/accounting snapshots.
+- LocalStorage persistence for demo state.
 
-```bash
-npm run build
-npm run preview -- --host 0.0.0.0
-```
+## Module status
 
-## Notes
+The complete navigation list is present. Modules not yet implemented are explicitly identified in their screens; they are not represented as finished workflows. Remaining work includes server-side API and PostgreSQL, secure authentication/role enforcement, durable offline sync, complete recipe/ingredient mapping, purchase/expense/payroll ledgers, customer due collection, reservations/tables, actual QR generation/online ordering, and automated end-to-end tests.
 
-This project is organized around a restaurant management front-end and demo data model. It is ready for extension with PostgreSQL, secure auth, real-time syncing, and a backend API layer.
+## Important limitations
+
+This is a single-browser demo, not a production-ready financial system. LocalStorage is not a shared database, authentication is not configured, and the demo does not safely support concurrent terminals. Do not rely on it as the sole record for real payments or inventory until a secure backend and transaction-safe database are integrated. Accurate profit reporting also requires recorded COGS, purchases, expenses and payroll; the app deliberately avoids fabricated profit figures.

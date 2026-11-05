@@ -1,845 +1,133 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import {
-  categories,
-  demoAuditLogs,
-  demoCustomers,
-  demoEmployees,
-  demoInventory,
-  demoOrders,
-  demoProducts,
-  demoSuppliers
-} from './data/demoData';
-import {
-  type CartItem,
-  type Customer,
-  type Employee,
-  type InventoryItem,
-  type Order,
-  type OrderStatus,
-  type PaymentMethod,
-  type Product,
-  type Supplier
-} from './types';
+import { Activity, ArrowDownRight, ArrowUpRight, BarChart3, Bell, Bike, BookOpen, Boxes, BriefcaseBusiness, CalendarDays, ChefHat, ChevronDown, CircleDollarSign, ClipboardList, CreditCard, Grid2X2, LayoutDashboard, LogOut, Menu, Package, Plus, Printer, Search, Settings, ShoppingBag, ShoppingCart, Sparkles, Table2, Users, Wallet, X } from 'lucide-react';
+import { categories, demoAuditLogs, demoCustomers, demoEmployees, demoInventory, demoOrders, demoProducts, demoSuppliers } from './data/demoData';
+import { type CartItem, type Customer, type InventoryItem, type Order, type OrderStatus, type PaymentMethod, type Product } from './types';
 
-const currency = (value: number) => `৳${value.toLocaleString()}`;
-
-const readStorage = <T,>(key: string, fallback: T): T => {
-  const raw = localStorage.getItem(key);
-  if (!raw) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
+const currency = (amount: number) => `৳${Math.round(amount).toLocaleString('en-BD')}`;
+const safeRead = <T,>(key: string, initial: T): T => {
+  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : initial; } catch { return initial; }
 };
-
-const writeStorage = <T,>(key: string, value: T) => {
-  localStorage.setItem(key, JSON.stringify(value));
-};
-
-const nextOrderNumber = () => {
-  const current = readStorage<number>('musafir-last-order', 1000);
-  const next = current + 1;
-  writeStorage('musafir-last-order', next);
-  return String(next);
-};
-
-const cycleStatus = (status: OrderStatus): OrderStatus => {
-  const steps: OrderStatus[] = ['Pending', 'Accepted', 'Preparing', 'Ready', 'Completed'];
-  const index = steps.indexOf(status);
-  return steps[(index + 1) % steps.length];
-};
-
-const navItems = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'pos', label: 'POS / Billing' },
-  { id: 'orders', label: 'Orders' },
-  { id: 'kitchen', label: 'Kitchen Display' },
-  { id: 'inventory', label: 'Inventory' },
-  { id: 'customers', label: 'Customers' },
-  { id: 'accounting', label: 'Accounting' },
-  { id: 'qr', label: 'QR Menu' },
-  { id: 'settings', label: 'Settings' }
+const save = (key: string, value: unknown) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Storage can be disabled or full; app remains usable for this session. */ } };
+const moduleGroups = [
+  { title: 'Workspace', items: [{ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }, { id: 'pos', label: 'POS / Billing', icon: ShoppingCart }, { id: 'orders', label: 'Orders', icon: ClipboardList }, { id: 'kitchen', label: 'Kitchen Display', icon: ChefHat }, { id: 'tables', label: 'Tables Management', icon: Table2 }, { id: 'reservations', label: 'Reservations', icon: CalendarDays }] },
+  { title: 'Restaurant', items: [{ id: 'customers', label: 'Customers', icon: Users }, { id: 'menu', label: 'Menu Management', icon: BookOpen }, { id: 'categories', label: 'Categories', icon: Grid2X2 }, { id: 'inventory', label: 'Inventory', icon: Boxes }, { id: 'recipes', label: 'Recipes & Ingredients', icon: Package }, { id: 'suppliers', label: 'Suppliers', icon: BriefcaseBusiness }, { id: 'purchases', label: 'Purchase Management', icon: ShoppingBag }, { id: 'delivery', label: 'Delivery Management', icon: Bike }] },
+  { title: 'Finance & team', items: [{ id: 'expenses', label: 'Expenses', icon: Wallet }, { id: 'employees', label: 'Employee Management', icon: Users }, { id: 'attendance', label: 'Attendance', icon: CalendarDays }, { id: 'payroll', label: 'Salary & Payroll', icon: CircleDollarSign }, { id: 'accounting', label: 'Accounting', icon: BarChart3 }, { id: 'reports', label: 'Sales Reports', icon: BarChart3 }, { id: 'profit', label: 'Profit & Loss', icon: Activity }, { id: 'dues', label: 'Customer Due', icon: CreditCard }, { id: 'discounts', label: 'Discounts & Coupons', icon: Sparkles }] },
+  { title: 'Channels & setup', items: [{ id: 'qr', label: 'QR Menu', icon: Grid2X2 }, { id: 'settings', label: 'Settings', icon: Settings }, { id: 'roles', label: 'User Roles & Permissions', icon: Users }] }
 ];
+const workflow: OrderStatus[] = ['Pending', 'Accepted', 'Preparing', 'Ready', 'Completed'];
 
 function App() {
-  const [selectedView, setSelectedView] = useState('dashboard');
-  const [products, setProducts] = useState<Product[]>(() => readStorage('musafir-products', demoProducts));
-  const [inventory, setInventory] = useState<InventoryItem[]>(() => readStorage('musafir-inventory', demoInventory));
-  const [customers, setCustomers] = useState<Customer[]>(() => readStorage('musafir-customers', demoCustomers));
-  const [orders, setOrders] = useState<Order[]>(() => readStorage('musafir-orders', demoOrders));
-  const [employees, setEmployees] = useState<Employee[]>(() => readStorage('musafir-employees', demoEmployees));
-  const [suppliers, setSuppliers] = useState<Supplier[]>(() => readStorage('musafir-suppliers', demoSuppliers));
-  const [auditLogs, setAuditLogs] = useState(() => readStorage('musafir-audit', demoAuditLogs));
-  const [searchTerm, setSearchTerm] = useState('');
-  const [currentCategory, setCurrentCategory] = useState('All');
-  const [cart, setCart] = useState<CartItem[]>(() => readStorage('musafir-cart', []));
+  const [view, setView] = useState('dashboard');
+  const [products, setProducts] = useState<Product[]>(() => safeRead('musafir-products', demoProducts));
+  const [inventory, setInventory] = useState<InventoryItem[]>(() => safeRead('musafir-inventory', demoInventory));
+  const [customers, setCustomers] = useState<Customer[]>(() => safeRead('musafir-customers', demoCustomers));
+  const [orders, setOrders] = useState<Order[]>(() => safeRead('musafir-orders', demoOrders));
+  const [cart, setCart] = useState<CartItem[]>(() => safeRead('musafir-cart', []));
+  const [employees] = useState(() => safeRead('musafir-employees', demoEmployees));
+  const [suppliers] = useState(() => safeRead('musafir-suppliers', demoSuppliers));
+  const [logs, setLogs] = useState(() => safeRead('musafir-audit', demoAuditLogs));
+  const [category, setCategory] = useState('All');
+  const [search, setSearch] = useState('');
   const [orderType, setOrderType] = useState<Order['type']>('Dine-in');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
-  const [cashTendered, setCashTendered] = useState(0);
-  const [discountPercent, setDiscountPercent] = useState(0);
-  const [specialNote, setSpecialNote] = useState('');
+  const [payMethod, setPayMethod] = useState<PaymentMethod>('Cash');
+  const [cash, setCash] = useState('');
+  const [discount, setDiscount] = useState('0');
+  const [note, setNote] = useState('');
+  const [toast, setToast] = useState('');
+  const [mobileNav, setMobileNav] = useState(false);
+  const [light, setLight] = useState(false);
 
-  useEffect(() => {
-    writeStorage('musafir-products', products);
-  }, [products]);
+  useEffect(() => { save('musafir-products', products); }, [products]);
+  useEffect(() => { save('musafir-inventory', inventory); }, [inventory]);
+  useEffect(() => { save('musafir-customers', customers); }, [customers]);
+  useEffect(() => { save('musafir-orders', orders); }, [orders]);
+  useEffect(() => { save('musafir-cart', cart); }, [cart]);
+  useEffect(() => { save('musafir-audit', logs); }, [logs]);
+  useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(''), 2800); return () => window.clearTimeout(timer); }, [toast]);
 
-  useEffect(() => {
-    writeStorage('musafir-inventory', inventory);
-  }, [inventory]);
+  const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+  const tax = subtotal * 0.05;
+  const discountAmount = (subtotal + tax) * Math.max(0, Math.min(100, Number(discount) || 0)) / 100;
+  const total = Math.max(0, subtotal + tax - discountAmount);
+  const paid = payMethod === 'Cash' ? Math.min(Number(cash) || 0, total) : total;
+  const due = Math.max(0, total - paid);
+  const filteredProducts = useMemo(() => products.filter(p => (category === 'All' || p.category === category) && p.name.toLowerCase().includes(search.toLowerCase())), [products, category, search]);
+  const lowStock = inventory.filter(item => item.stock <= item.reorderLevel);
+  const todayOrders = orders.filter(order => new Date(order.createdAt).toDateString() === new Date().toDateString() && order.number !== 'HOLD');
+  const salesToday = todayOrders.reduce((sum, order) => sum + order.total, 0);
+  const week = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - (6 - index));
+    const amount = orders.filter(order => order.number !== 'HOLD' && new Date(order.createdAt).toDateString() === date.toDateString()).reduce((sum, order) => sum + order.total, 0);
+    return { day: date.toLocaleDateString('en', { weekday: 'short' }), amount };
+  });
+  const maxWeek = Math.max(1, ...week.map(item => item.amount));
+  const topProducts = [...orders.filter(order => order.number !== 'HOLD').flatMap(order => order.items)].reduce<{name:string; qty:number}[]>((list, item) => {
+    const found = list.find(entry => entry.name === item.name); if (found) found.qty += item.qty; else list.push({ name: item.name, qty: item.qty }); return list;
+  }, []).sort((a,b) => b.qty - a.qty).slice(0,4);
 
-  useEffect(() => {
-    writeStorage('musafir-orders', orders);
-  }, [orders]);
-
-  useEffect(() => {
-    writeStorage('musafir-cart', cart);
-  }, [cart]);
-
-  useEffect(() => {
-    writeStorage('musafir-customers', customers);
-  }, [customers]);
-
-  useEffect(() => {
-    writeStorage('musafir-employees', employees);
-  }, [employees]);
-
-  useEffect(() => {
-    writeStorage('musafir-suppliers', suppliers);
-  }, [suppliers]);
-
-  useEffect(() => {
-    writeStorage('musafir-audit', auditLogs);
-  }, [auditLogs]);
-
-  const visibleProducts = useMemo(() => {
-    return products.filter((product) => {
-      const matchesCategory = currentCategory === 'All' || product.category === currentCategory;
-      const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesCategory && matchesSearch;
-    });
-  }, [products, currentCategory, searchTerm]);
-
-  const cartSubtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
-  const taxValue = cartSubtotal * 0.05;
-  const discountValue = (cartSubtotal + taxValue) * (discountPercent / 100);
-  const total = cartSubtotal + taxValue - discountValue;
-  const paidAmount = paymentMethod === 'Cash' ? Math.min(cashTendered || total, total) : total;
-  const dueAmount = Math.max(total - paidAmount, 0);
-
-  const stats = useMemo(() => {
-    const revenue = orders.reduce((sum, order) => sum + order.total, 0);
-    const todaySales = orders.reduce((sum, order) => {
-      const today = new Date().toDateString();
-      return new Date(order.createdAt).toDateString() === today ? sum + order.total : sum;
-    }, 0);
-
-    const expenseTotal = employees.reduce((sum, employee) => sum + employee.salary, 0) * 0.08;
-    const profit = orders.reduce((sum, order) => sum + order.total, 0) * 0.34;
-
-    return {
-      revenue,
-      todaySales,
-      customerCount: customers.length,
-      expenseTotal,
-      profit
-    };
-  }, [orders, customers, employees]);
-
-  const lowStockItems = inventory.filter((item) => item.stock <= item.reorderLevel);
-
-  const addItemToCart = (product: Product) => {
-    const enoughStock = product.recipe.every((ingredient) => {
-      const stockItem = inventory.find((entry) => entry.name.toLowerCase() === ingredient.name.toLowerCase());
-      return !!stockItem && stockItem.stock >= ingredient.qty;
-    });
-
-    if (!enoughStock) {
-      alert('Not enough stock for this menu item. Please restock before selling it.');
-      return;
-    }
-
-    setCart((current) => {
-      const existing = current.find((item) => item.productId === product.id);
-      if (existing) {
-        return current.map((item) =>
-          item.productId === product.id ? { ...item, qty: item.qty + 1 } : item
-        );
-      }
-      return [...current, { productId: product.id, id: product.id, name: product.name, price: product.price, qty: 1 }];
-    });
+  const flash = (message: string) => setToast(message);
+  const nextNumber = () => { const next = Math.max(1000, ...orders.map(order => Number(order.number) || 0)) + 1; return String(next); };
+  const addToCart = (product: Product) => {
+    setCart(current => { const exists = current.find(item => item.productId === product.id); return exists ? current.map(item => item.productId === product.id ? { ...item, qty: item.qty + 1 } : item) : [...current, { id: `${product.id}-${Date.now()}`, productId: product.id, name: product.name, price: product.price, qty: 1 }]; });
   };
-
-  const updateQty = (productId: string, delta: number) => {
-    setCart((current) =>
-      current
-        .map((item) => (item.productId === productId ? { ...item, qty: Math.max(0, item.qty + delta) } : item))
-        .filter((item) => item.qty > 0)
-    );
-  };
-
-  const clearCart = () => {
-    setCart([]);
-    setCashTendered(0);
-    setDiscountPercent(0);
-    setSpecialNote('');
-    setPaymentMethod('Cash');
-  };
-
+  const clearCart = () => { setCart([]); setCash(''); setDiscount('0'); setNote(''); };
   const placeOrder = () => {
-    if (!cart.length) return;
-
-    const orderNumber = nextOrderNumber();
-    const paid = paymentMethod === 'Cash' ? Math.min(cashTendered || total, total) : total;
-    const due = Math.max(total - paid, 0);
-
-    const newOrder: Order = {
-      id: `o-${orderNumber}`,
-      number: orderNumber,
-      type: orderType,
-      status: 'Pending',
-      createdAt: new Date().toISOString(),
-      customerName: customers[0]?.name ?? 'Walk-in Guest',
-      items: cart.map((item) => ({
-        id: item.id,
-        productId: item.productId,
-        name: item.name,
-        qty: item.qty,
-        unitPrice: item.price,
-        note: specialNote || undefined
-      })),
-      subtotal: cartSubtotal,
-      tax: taxValue,
-      discount: discountValue,
-      total,
-      paid,
-      due,
-      paymentMethod,
-      kitchenNote: specialNote || undefined
-    };
-
-    setOrders((current) => [newOrder, ...current]);
-
-    const deductionMap = new Map<string, number>();
-    cart.forEach((entry) => {
-      const product = products.find((item) => item.id === entry.productId);
-      if (!product) return;
-      product.recipe.forEach((ingredient) => {
-        const key = ingredient.name.toLowerCase();
-        deductionMap.set(key, (deductionMap.get(key) ?? 0) + ingredient.qty * entry.qty);
-      });
-    });
-
-    setInventory((current) =>
-      current.map((item) => {
-        const deduction = deductionMap.get(item.name.toLowerCase()) ?? 0;
-        if (deduction === 0) return item;
-        return { ...item, stock: Math.max(0, item.stock - deduction) };
-      })
-    );
-
-    setAuditLogs((current) => [
-      {
-        id: `log-${Date.now()}`,
-        title: 'Order created',
-        detail: `Order #${newOrder.number} was placed for ${newOrder.customerName}.`,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      },
-      ...current
-    ]);
-
-    clearCart();
-    setSelectedView('orders');
+    if (!cart.length) { flash('Add at least one menu item first.'); return; }
+    if (due > 0) { flash('Payment is incomplete. Record the full payment or use a backend-enabled due account.'); return; }
+    const number = nextNumber();
+    const order: Order = { id: `o-${number}`, number, type: orderType, status: 'Pending', createdAt: new Date().toISOString(), customerName: 'Walk-in Guest', items: cart.map(item => ({ id: item.id, productId: item.productId, name: item.name, qty: item.qty, unitPrice: item.price, note: note || undefined })), subtotal, tax, discount: discountAmount, total, paid, due: 0, paymentMethod: payMethod, kitchenNote: note || undefined };
+    const deductions = new Map<string, number>();
+    cart.forEach(item => products.find(product => product.id === item.productId)?.recipe.forEach(ingredient => { const key = ingredient.name.toLowerCase(); deductions.set(key, (deductions.get(key) || 0) + ingredient.qty * item.qty); }));
+    setInventory(current => current.map(item => { const amount = deductions.get(item.name.toLowerCase()) || 0; return amount ? { ...item, stock: Math.max(0, item.stock - amount) } : item; }));
+    setOrders(current => [order, ...current]);
+    setLogs(current => [{ id: `log-${Date.now()}`, title: 'Sale completed', detail: `Order #${number} · ${currency(total)} · ${payMethod}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
+    clearCart(); setView('orders'); flash(`Order #${number} placed successfully.`);
   };
-
   const holdOrder = () => {
-    if (!cart.length) return;
-
-    const holdOrderEntry: Order = {
-      id: `hold-${Date.now()}`,
-      number: 'HOLD',
-      type: orderType,
-      status: 'Pending',
-      createdAt: new Date().toISOString(),
-      customerName: 'Held Order',
-      items: cart.map((item) => ({
-        id: `${item.id}-hold`,
-        productId: item.productId,
-        name: item.name,
-        qty: item.qty,
-        unitPrice: item.price,
-        note: specialNote || undefined
-      })),
-      subtotal: cartSubtotal,
-      tax: taxValue,
-      discount: discountValue,
-      total,
-      paid: 0,
-      due: total,
-      paymentMethod,
-      kitchenNote: specialNote || undefined
-    };
-
-    setOrders((current) => [holdOrderEntry, ...current]);
-    clearCart();
-    setSelectedView('orders');
+    if (!cart.length) { flash('There is no order to hold.'); return; }
+    const number = `H-${Date.now()}`;
+    const order: Order = { id: number, number: 'HOLD', type: orderType, status: 'Pending', createdAt: new Date().toISOString(), customerName: 'Held order', items: cart.map(item => ({ id: `${item.id}-hold`, productId: item.productId, name: item.name, qty: item.qty, unitPrice: item.price })), subtotal, tax, discount: discountAmount, total, paid: 0, due: total, paymentMethod: payMethod, kitchenNote: note || undefined };
+    setOrders(current => [order, ...current]); clearCart(); setView('orders'); flash('Order held. Resume it from the Orders list.');
   };
+  const resumeOrder = (order: Order) => { setCart(order.items.map(item => ({ id: item.id, productId: item.productId, name: item.name, price: item.unitPrice, qty: item.qty }))); setOrderType(order.type); setOrders(current => current.filter(entry => entry.id !== order.id)); setView('pos'); flash('Held order restored to the cart.'); };
+  const changeStatus = (id: string) => setOrders(current => current.map(order => { if (order.id !== id) return order; const index = workflow.indexOf(order.status); return { ...order, status: workflow[Math.min(index + 1, workflow.length - 1)] }; }));
+  const addStock = (item: InventoryItem) => { const quantity = Number(window.prompt(`How many ${item.unit} should be added to ${item.name}?`, '10')); if (!Number.isFinite(quantity) || quantity <= 0) return; setInventory(current => current.map(entry => entry.id === item.id ? { ...entry, stock: entry.stock + quantity } : entry)); flash(`${item.name} stock updated.`); };
+  const addCustomer = () => { const name = window.prompt('Customer name'); if (!name?.trim()) return; const phone = window.prompt('Phone number') || ''; setCustomers(current => [{ id: `c-${Date.now()}`, name: name.trim(), phone, address: '', due: 0, loyaltyPoints: 0, favoriteItems: [] }, ...current]); flash('Customer added.'); };
 
-  const advanceOrderStatus = (orderId: string) => {
-    setOrders((current) =>
-      current.map((order) =>
-        order.id === orderId ? { ...order, status: cycleStatus(order.status) } : order
-      )
-    );
-  };
+  const panel = 'rounded-[24px] border border-white/[.07] bg-[#14191f] shadow-[0_18px_50px_rgba(0,0,0,.24)]';
+  const heading = (eyebrow: string, title: string, subtitle?: string) => <div><p className="text-[10px] font-bold uppercase tracking-[.24em] text-[#caa348]">{eyebrow}</p><h1 className="mt-1 text-[26px] font-semibold tracking-tight text-white">{title}</h1>{subtitle && <p className="mt-1 text-sm text-slate-400">{subtitle}</p>}</div>;
 
-  const renderDashboard = (): ReactNode => (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.35em] text-brand-200">Control center</p>
-          <h2 className="text-3xl font-bold text-white">Dashboard Overview</h2>
-        </div>
-        <div className="flex gap-2 text-xs text-slate-300">
-          <button className="rounded-full border border-brand-300/35 bg-brand-500/10 px-3 py-2 text-brand-100">Today</button>
-          <button className="rounded-full border border-slate-700 bg-slate-900 px-3 py-2">Week</button>
-          <button className="rounded-full border border-slate-700 bg-slate-900 px-3 py-2">Month</button>
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {[
-          { label: 'Today Sales', value: currency(stats.todaySales), change: '+12.5%' },
-          { label: 'Total Orders', value: String(orders.length), change: '+8.3%' },
-          { label: 'Total Customers', value: String(customers.length), change: '+10.1%' },
-          { label: 'Gross Profit', value: currency(stats.profit), change: '+14.2%' }
-        ].map((card) => (
-          <div key={card.label} className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5 shadow-soft">
-            <div className="flex items-center justify-between text-slate-300">
-              <span>{card.label}</span>
-              <span className="rounded-full bg-brand-500/10 px-2 py-1 text-xs text-brand-100">{card.change}</span>
-            </div>
-            <div className="mt-4 text-3xl font-bold text-white">{card.value}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
-        <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-          <div className="mb-5 flex items-center justify-between">
-            <h3 className="text-xl font-semibold text-white">Sales Overview</h3>
-            <span className="text-sm text-slate-400">Last 7 days</span>
-          </div>
-          <div className="grid h-56 grid-cols-7 items-end gap-3">
-            {[52, 68, 44, 92, 76, 108, 130].map((height, index) => (
-              <div key={index} className="flex flex-col items-center gap-3">
-                <div className="w-full rounded-t-2xl bg-gradient-to-t from-brand-500 to-brand-300" style={{ height: `${height}px` }} />
-                <span className="text-xs text-slate-400">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index]}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-          <div className="mb-5 flex items-center justify-between">
-            <h3 className="text-xl font-semibold text-white">Top Selling</h3>
-            <span className="text-sm text-brand-200">This week</span>
-          </div>
-          <div className="space-y-4">
-            {['Chicken Burger', 'French Fries', 'Cold Coffee', 'Pizza Slice'].map((item, idx) => (
-              <div key={item} className="flex items-center justify-between rounded-2xl bg-slate-800 p-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500/15 text-lg text-brand-200">{idx + 1}</div>
-                  <div>
-                    <div className="font-medium text-white">{item}</div>
-                    <div className="text-xs text-slate-400">{Math.max(40, 120 - idx * 14)} sold</div>
-                  </div>
-                </div>
-                <div className="text-sm font-semibold text-brand-100">{currency(180 + idx * 20)}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
-        <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-xl font-semibold text-white">Recent Orders</h3>
-            <button className="rounded-full border border-brand-300/35 bg-brand-500/10 px-3 py-1.5 text-xs text-brand-100">View all</button>
-          </div>
-          <div className="space-y-3">
-            {orders.slice(0, 5).map((order) => (
-              <div key={order.id} className="flex items-center justify-between rounded-2xl bg-slate-800 p-3">
-                <div>
-                  <div className="font-medium text-white">#{order.number}</div>
-                  <div className="text-xs text-slate-400">{order.customerName} • {order.type}</div>
-                </div>
-                <div className="text-right">
-                  <div className="font-semibold text-brand-100">{currency(order.total)}</div>
-                  <div className="text-xs text-slate-400">{order.status}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-xl font-semibold text-white">Low Stock Alerts</h3>
-            <span className="rounded-full bg-red-500/10 px-2 py-1 text-xs text-red-300">{lowStockItems.length} items</span>
-          </div>
-          <div className="space-y-3">
-            {lowStockItems.map((item) => (
-              <div key={item.id} className="flex items-center justify-between rounded-2xl bg-slate-800 p-3">
-                <div>
-                  <div className="font-medium text-white">{item.name}</div>
-                  <div className="text-xs text-slate-400">Reorder: {item.reorderLevel}</div>
-                </div>
-                <div className="text-right">
-                  <div className="font-semibold text-red-300">{item.stock} left</div>
-                  <div className="text-xs text-slate-400">{item.unit}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+  const dashboard = (): ReactNode => <div className="space-y-5">
+    <section className="relative overflow-hidden rounded-[26px] border border-[#d6a943]/20 bg-[radial-gradient(ellipse_at_82%_15%,rgba(228,172,54,.22),transparent_35%),linear-gradient(115deg,#191b1d,#111519)] p-6 md:p-8">
+      <div className="relative z-10 max-w-xl"><div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#d6a943]/30 bg-[#d6a943]/10 px-3 py-1.5 text-xs text-[#f3d890]"><Sparkles size={14}/> Good Food • Good Mood</div><h1 className="text-3xl font-semibold leading-tight text-white md:text-4xl">Your restaurant,<br/><span className="text-[#e7b943]">beautifully in control.</span></h1><p className="mt-3 max-w-md text-sm leading-6 text-slate-400">A live view of sales, orders, and service for Musafir Fast Food.</p><button onClick={() => setView('pos')} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#e6b23d] px-4 py-2.5 text-sm font-semibold text-[#17130b] transition hover:bg-[#f4c75f]"><Plus size={16}/> Start a new order</button></div><div className="pointer-events-none absolute -right-10 -bottom-16 hidden h-72 w-72 rounded-full border border-[#e7b943]/15 md:block"><div className="absolute inset-8 rounded-full border border-[#e7b943]/20"/><div className="absolute inset-16 rounded-full bg-[#e7b943]/[.04]"/></div>
+    </section>
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {[{label:'Sales today',value:currency(salesToday),icon:CircleDollarSign,sub:`${todayOrders.length} paid orders`},{label:'Orders today',value:String(todayOrders.length),icon:ClipboardList,sub:`${orders.filter(o=>o.status!=='Completed'&&o.number!=='HOLD').length} in progress`},{label:'Customers',value:String(customers.length),icon:Users,sub:'Saved customer profiles'},{label:'Low stock',value:String(lowStock.length),icon:Boxes,sub:lowStock.length?'Restock recommended':'Stock levels healthy'}].map((card,index)=><div key={card.label} className={`${panel} p-4`}><div className="flex items-center justify-between"><span className="text-sm text-slate-400">{card.label}</span><span className={`grid h-9 w-9 place-items-center rounded-xl ${index===3&&lowStock.length?'bg-rose-400/10 text-rose-300':'bg-[#e6b23d]/10 text-[#e7b943]'}`}><card.icon size={17}/></span></div><div className="mt-4 text-2xl font-semibold text-white">{card.value}</div><div className="mt-1 text-xs text-slate-500">{card.sub}</div></div>)}
     </div>
-  );
-
-  const renderPos = (): ReactNode => (
-    <div className="grid gap-6 xl:grid-cols-[1.5fr_0.8fr]">
-      <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-        <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <h2 className="text-2xl font-bold text-white">POS / Billing</h2>
-          <div className="flex gap-2">
-            {['Dine-in', 'Takeaway', 'Pickup', 'Home Delivery'].map((choice) => (
-              <button
-                key={choice}
-                onClick={() => setOrderType(choice as Order['type'])}
-                className={`rounded-full px-3 py-2 text-xs font-medium ${orderType === choice ? 'bg-brand-500 text-slate-900' : 'border border-slate-700 bg-slate-800 text-slate-300'}`}
-              >
-                {choice}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mb-5 flex flex-col gap-3 md:flex-row">
-          <input
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder="Search menu items..."
-            className="flex-1 rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-slate-100 placeholder:text-slate-400"
-          />
-          <select
-            value={currentCategory}
-            onChange={(event) => setCurrentCategory(event.target.value)}
-            className="rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-slate-200"
-          >
-            <option value="All">All Categories</option>
-            {categories.map((category) => (
-              <option key={category} value={category}>{category}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {visibleProducts.map((product) => (
-            <button
-              key={product.id}
-              onClick={() => addItemToCart(product)}
-              className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-800 text-left shadow-soft transition hover:-translate-y-1 hover:border-brand-400"
-            >
-              <img src={product.image} alt={product.name} className="h-32 w-full object-cover" />
-              <div className="p-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm text-brand-200">{product.category}</span>
-                  <span className="rounded-full bg-brand-500/15 px-2 py-1 text-xs text-brand-100">{product.popularity}%</span>
-                </div>
-                <div className="mb-2 font-semibold text-white">{product.name}</div>
-                <div className="text-lg font-bold text-brand-100">{currency(product.price)}</div>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-xl font-semibold text-white">Current Order</h3>
-          <button onClick={clearCart} className="text-xs text-red-300">Clear All</button>
-        </div>
-
-        <div className="space-y-3">
-          {cart.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-700 p-6 text-center text-slate-400">No items selected</div>
-          ) : (
-            cart.map((item) => (
-              <div key={item.productId} className="rounded-2xl border border-slate-700 bg-slate-800 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="font-medium text-white">{item.name}</div>
-                    <div className="text-xs text-slate-400">{currency(item.price)} each</div>
-                  </div>
-                  <button onClick={() => updateQty(item.productId, -1)} className="h-8 w-8 rounded-full bg-slate-700 text-lg text-white">−</button>
-                </div>
-                <div className="mt-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="rounded-full bg-slate-700 px-2 py-1 text-sm text-white">{item.qty}</span>
-                    <button onClick={() => updateQty(item.productId, 1)} className="h-8 w-8 rounded-full bg-brand-500 text-lg text-slate-900">+</button>
-                  </div>
-                  <div className="font-semibold text-brand-100">{currency(item.price * item.qty)}</div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        <div className="mt-5 space-y-3 rounded-2xl bg-slate-800 p-4">
-          <div className="flex items-center justify-between text-sm text-slate-300"><span>Subtotal</span><span>{currency(cartSubtotal)}</span></div>
-          <div className="flex items-center justify-between text-sm text-slate-300"><span>Tax (5%)</span><span>{currency(taxValue)}</span></div>
-          <div className="flex items-center justify-between text-sm text-slate-300">
-            <span>Discount</span>
-            <input value={discountPercent} onChange={(event) => setDiscountPercent(Number(event.target.value))} className="w-20 rounded-lg border border-slate-600 bg-slate-900 px-2 py-1 text-right text-white" type="number" min={0} max={100} />
-          </div>
-          <div className="flex items-center justify-between pt-2 text-lg font-bold text-white"><span>Total</span><span>{currency(total)}</span></div>
-        </div>
-
-        <div className="mt-5 space-y-3">
-          <label className="block text-sm text-slate-300">Special instructions</label>
-          <textarea value={specialNote} onChange={(event) => setSpecialNote(event.target.value)} rows={2} className="w-full rounded-2xl border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100" />
-          <div className="grid grid-cols-3 gap-2">
-            {(['Cash', 'Card', 'Digital'] as PaymentMethod[]).map((method) => (
-              <button key={method} onClick={() => setPaymentMethod(method)} className={`rounded-xl border px-3 py-2 text-sm ${paymentMethod === method ? 'border-brand-400 bg-brand-500/10 text-brand-100' : 'border-slate-700 bg-slate-800 text-slate-300'}`}>
-                {method}
-              </button>
-            ))}
-          </div>
-          {paymentMethod === 'Cash' && (
-            <input
-              type="number"
-              value={cashTendered}
-              onChange={(event) => setCashTendered(Number(event.target.value))}
-              placeholder="Cash tendered"
-              className="w-full rounded-2xl border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100"
-            />
-          )}
-          <div className="rounded-xl bg-slate-800 p-3 text-sm text-slate-300">
-            <div className="flex items-center justify-between"><span>Paid</span><span>{currency(paidAmount)}</span></div>
-            <div className="mt-1 flex items-center justify-between"><span>Due</span><span>{currency(dueAmount)}</span></div>
-          </div>
-        </div>
-
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <button onClick={holdOrder} className="rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 font-medium text-slate-100">Hold Order</button>
-          <button onClick={() => window.print()} className="rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 font-medium text-slate-100">Print Bill</button>
-          <button onClick={placeOrder} className="col-span-2 rounded-2xl bg-brand-500 px-4 py-3 font-bold text-slate-900">Pay Now • {currency(total)}</button>
-        </div>
-      </div>
+    <div className="grid gap-4 xl:grid-cols-[1.35fr_.85fr]">
+      <section className={`${panel} p-5`}><div className="mb-5 flex items-center justify-between"><div><h2 className="font-semibold text-white">Sales activity</h2><p className="mt-1 text-xs text-slate-500">Actual order totals · last 7 days</p></div><span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-slate-400">BDT</span></div><div className="flex h-44 items-end gap-3 border-b border-l border-white/[.07] px-3 pb-0">{week.map(item=><div key={item.day} className="flex h-full flex-1 flex-col items-center justify-end gap-2"><div title={currency(item.amount)} className="w-full max-w-12 rounded-t-lg bg-gradient-to-t from-[#a9791e] to-[#f0c85c] transition-all" style={{height:`${item.amount ? Math.max(8,item.amount/maxWeek*78):3}%`}}/><span className="mb-2 text-[10px] text-slate-500">{item.day}</span></div>)}</div></section>
+      <section className={`${panel} p-5`}><div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold text-white">Best sellers</h2><p className="mt-1 text-xs text-slate-500">Based on recorded order items</p></div><button onClick={()=>setView('reports')} className="text-xs text-[#e7b943] hover:text-white">View report</button></div>{topProducts.length?topProducts.map((item,index)=><div key={item.name} className="flex items-center gap-3 border-b border-white/[.05] py-3 last:border-0"><span className="grid h-8 w-8 place-items-center rounded-lg bg-white/[.05] text-xs font-semibold text-[#e7b943]">0{index+1}</span><span className="flex-1 text-sm text-slate-200">{item.name}</span><span className="text-xs text-slate-500">{item.qty} sold</span></div>):<p className="py-8 text-center text-sm text-slate-500">Sales data will appear here after orders are placed.</p>}</section>
     </div>
-  );
+    <div className="grid gap-4 xl:grid-cols-2"><section className={`${panel} p-5`}><div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold text-white">Recent orders</h2><p className="mt-1 text-xs text-slate-500">Latest sales and held checks</p></div><button onClick={()=>setView('orders')} className="text-xs text-[#e7b943]">All orders →</button></div>{orders.slice(0,4).map(order=><div key={order.id} className="flex items-center justify-between border-t border-white/[.05] py-3"><div><div className="text-sm font-medium text-slate-200">{order.number==='HOLD'?'Held order':`#${order.number}`} · {order.customerName}</div><div className="mt-1 text-xs text-slate-500">{order.type} · {new Date(order.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div></div><div className="text-right"><div className="text-sm font-semibold text-white">{currency(order.total)}</div><span className="text-[11px] text-[#d9b752]">{order.number==='HOLD'?'On hold':order.status}</span></div></div>)}</section><section className={`${panel} p-5`}><div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold text-white">Stock watch</h2><p className="mt-1 text-xs text-slate-500">Items at or below reorder point</p></div><button onClick={()=>setView('inventory')} className="text-xs text-[#e7b943]">Inventory →</button></div>{lowStock.length?lowStock.slice(0,4).map(item=><div key={item.id} className="flex items-center justify-between border-t border-white/[.05] py-3"><div><div className="text-sm text-slate-200">{item.name}</div><div className="mt-1 text-xs text-slate-500">Reorder at {item.reorderLevel} {item.unit}</div></div><span className="rounded-full bg-rose-400/10 px-2.5 py-1 text-xs text-rose-300">{item.stock} {item.unit}</span></div>):<p className="py-8 text-center text-sm text-slate-500">No low-stock items.</p>}</section></div>
+  </div>;
 
-  const renderOrders = (): ReactNode => (
-    <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-      <div className="mb-5 flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-white">Orders</h2>
-        <div className="text-sm text-slate-400">{orders.length} active orders</div>
-      </div>
-      <div className="space-y-4">
-        {orders.map((order) => (
-          <div key={order.id} className="rounded-2xl border border-slate-700 bg-slate-800 p-4">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="text-lg font-semibold text-white">#{order.number} • {order.customerName}</div>
-                <div className="text-xs text-slate-400">{order.type} • {new Date(order.createdAt).toLocaleString()}</div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="rounded-full bg-brand-500/10 px-2 py-1 text-xs text-brand-100">{order.status}</span>
-                <button onClick={() => advanceOrderStatus(order.id)} className="rounded-xl bg-brand-500 px-3 py-2 text-xs font-semibold text-slate-900">Advance Status</button>
-              </div>
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {order.items.map((item) => (
-                <div key={`${order.id}-${item.productId}`} className="rounded-xl border border-slate-700 bg-slate-900 p-3">
-                  <div className="font-medium text-white">{item.name}</div>
-                  <div className="text-sm text-slate-400">Qty: {item.qty}</div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 flex flex-wrap justify-between gap-3 text-sm text-slate-300">
-              <span>Subtotal: {currency(order.subtotal)}</span>
-              <span>Tax: {currency(order.tax)}</span>
-              <span>Discount: {currency(order.discount)}</span>
-              <span className="font-semibold text-brand-100">Total: {currency(order.total)}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+  const pos = (): ReactNode => <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]"><section className={`${panel} p-4 md:p-5`}><div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div>{heading('Front counter','Create an order','Choose items, then review and pay at the checkout.')}</div><div className="flex gap-1 rounded-xl bg-black/20 p-1">{(['Dine-in','Takeaway','Pickup','Home Delivery'] as Order['type'][]).map(type=><button key={type} onClick={()=>setOrderType(type)} className={`rounded-lg px-2.5 py-2 text-[11px] transition ${orderType===type?'bg-[#e7b943] font-semibold text-[#17130b]':'text-slate-400 hover:text-white'}`}>{type}</button>)}</div></div><div className="mb-4 flex gap-2"><div className="relative flex-1"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"/><input value={search} onChange={event=>setSearch(event.target.value)} placeholder="Search menu..." className="field w-full pl-9"/></div><button onClick={()=>setCategory('All')} className="rounded-xl border border-white/10 px-3 text-xs text-slate-300">Reset</button></div><div className="mb-5 flex gap-2 overflow-x-auto pb-1">{['All',...categories].map(item=><button key={item} onClick={()=>setCategory(item)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs ${category===item?'bg-[#e7b943] font-semibold text-[#17130b]':'border border-white/10 text-slate-400 hover:border-white/20 hover:text-white'}`}>{item}</button>)}</div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">{filteredProducts.map(product=><button key={product.id} onClick={()=>addToCart(product)} className="group overflow-hidden rounded-2xl border border-white/[.07] bg-[#191e24] text-left transition hover:-translate-y-0.5 hover:border-[#d8a93f]/50"><div className="relative h-36 overflow-hidden bg-[#22272c]"><img src={product.image} alt={product.name} loading="lazy" className="h-full w-full object-cover transition duration-500 group-hover:scale-105"/><span className="absolute right-2 top-2 rounded-full bg-black/65 px-2 py-1 text-[10px] text-white">{product.category}</span></div><div className="flex items-center justify-between p-3"><div><div className="text-sm font-medium text-white">{product.name}</div><div className="mt-1 text-sm font-semibold text-[#e7b943]">{currency(product.price)}</div></div><span className="grid h-8 w-8 place-items-center rounded-lg bg-[#e7b943]/10 text-[#e7b943]"><Plus size={17}/></span></div></button>)}</div>{!filteredProducts.length&&<div className="py-16 text-center text-sm text-slate-500">No menu items match this search.</div>}</section>
+    <aside className={`${panel} flex flex-col p-4 md:p-5`}><div className="flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#caa348]">Checkout</p><h2 className="mt-1 text-lg font-semibold text-white">Current order <span className="text-sm text-slate-500">({cart.reduce((n,item)=>n+item.qty,0)})</span></h2></div><button onClick={clearCart} className="rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-white/5 hover:text-rose-300">Clear</button></div><div className="mt-4 max-h-[34vh] min-h-24 flex-1 space-y-2 overflow-y-auto">{cart.length?cart.map(item=><div key={item.productId} className="flex items-center gap-3 rounded-xl bg-white/[.035] p-3"><div className="min-w-0 flex-1"><div className="truncate text-sm font-medium text-white">{item.name}</div><div className="mt-1 text-xs text-slate-500">{currency(item.price)} each</div></div><div className="flex items-center gap-2"><button aria-label={`Decrease ${item.name}`} onClick={()=>setCart(current=>current.map(entry=>entry.productId===item.productId?{...entry,qty:entry.qty-1}:entry).filter(entry=>entry.qty>0))} className="qty-btn">−</button><span className="w-4 text-center text-xs text-white">{item.qty}</span><button aria-label={`Increase ${item.name}`} onClick={()=>setCart(current=>current.map(entry=>entry.productId===item.productId?{...entry,qty:entry.qty+1}:entry))} className="qty-btn">+</button></div><div className="w-16 text-right text-xs font-semibold text-white">{currency(item.price*item.qty)}</div></div>):<div className="grid h-full min-h-28 place-items-center rounded-xl border border-dashed border-white/10 text-sm text-slate-600">Your order is empty</div>}</div><label className="mt-3 text-xs text-slate-400">Kitchen note</label><textarea value={note} onChange={event=>setNote(event.target.value)} rows={2} placeholder="Allergies, no onions, extra sauce…" className="field mt-1 resize-none"/><div className="mt-3 grid grid-cols-3 gap-2">{(['Cash','Card','Digital'] as PaymentMethod[]).map(method=><button key={method} onClick={()=>setPayMethod(method)} className={`rounded-lg border py-2 text-xs ${payMethod===method?'border-[#dfb248]/50 bg-[#dfb248]/10 text-[#f0d27c]':'border-white/10 text-slate-400'}`}>{method}</button>)}</div>{payMethod==='Cash'&&<input type="number" min="0" value={cash} onChange={event=>setCash(event.target.value)} placeholder="Cash received" className="field mt-2"/>}<div className="mt-3 flex items-center justify-between text-xs text-slate-400"><span>Discount (%)</span><input aria-label="Discount percent" type="number" min="0" max="100" value={discount} onChange={event=>setDiscount(String(Math.max(0,Math.min(100,Number(event.target.value)||0))))} className="field w-20 py-1.5 text-right"/></div><div className="mt-3 space-y-2 border-t border-white/[.07] pt-3 text-sm"><div className="flex justify-between text-slate-400"><span>Subtotal</span><span>{currency(subtotal)}</span></div><div className="flex justify-between text-slate-400"><span>Tax (5%)</span><span>{currency(tax)}</span></div><div className="flex justify-between text-slate-400"><span>Discount</span><span>−{currency(discountAmount)}</span></div><div className="flex justify-between pt-1 text-lg font-semibold text-white"><span>Total</span><span className="text-[#efc75e]">{currency(total)}</span></div>{payMethod==='Cash'&&<div className="flex justify-between text-xs text-slate-500"><span>Remaining</span><span>{currency(due)}</span></div>}</div><div className="mt-4 grid grid-cols-2 gap-2"><button onClick={holdOrder} disabled={!cart.length} className="rounded-xl border border-white/10 py-2.5 text-xs text-slate-300 disabled:opacity-40">Hold order</button><button onClick={()=>window.print()} disabled={!cart.length} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 py-2.5 text-xs text-slate-300 disabled:opacity-40"><Printer size={14}/> Print</button><button onClick={placeOrder} disabled={!cart.length||due>0} className="col-span-2 rounded-xl bg-[#e7b943] py-3 text-sm font-bold text-[#17130b] transition hover:bg-[#f4ca60] disabled:cursor-not-allowed disabled:opacity-40">{due>0?'Complete payment to place order':`Place order · ${currency(total)}`}</button></div></aside></div>;
 
-  const renderKitchen = (): ReactNode => (
-    <div className="space-y-6">
-      <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-white">Kitchen Display</h2>
-          <span className="rounded-full bg-brand-500/10 px-3 py-1 text-xs text-brand-100">Live Orders</span>
-        </div>
-        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-          {['Pending', 'Accepted', 'Preparing', 'Ready', 'Completed'].map((status) => (
-            <div key={status} className="rounded-2xl border border-slate-700 bg-slate-800 p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="font-semibold text-white">{status}</h3>
-                <span className="text-xs text-slate-400">{orders.filter((order) => order.status === status).length}</span>
-              </div>
-              <div className="space-y-3">
-                {orders.filter((order) => order.status === status).map((order) => (
-                  <div key={order.id} className="rounded-xl border border-slate-700 bg-slate-900 p-3">
-                    <div className="mb-2 flex items-center justify-between">
-                      <div className="font-medium text-white">#{order.number}</div>
-                      <div className="text-xs text-brand-100">{order.type}</div>
-                    </div>
-                    <div className="space-y-1 text-sm text-slate-300">
-                      {order.items.map((item) => (
-                        <div key={`${order.id}-${item.productId}-kitchen`}>{item.qty}x {item.name}</div>
-                      ))}
-                    </div>
-                    <div className="mt-3 text-xs text-slate-400">{order.kitchenNote || 'No special note'}</div>
-                    {status !== 'Completed' && (
-                      <button onClick={() => advanceOrderStatus(order.id)} className="mt-3 w-full rounded-xl bg-brand-500 px-3 py-2 text-sm font-semibold text-slate-900">Update</button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+  const ordersView = (): ReactNode => <section className={`${panel} p-5`}><div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Service workflow','Orders','Monitor the order lifecycle and resume checks on hold.')}</div><div className="space-y-3">{orders.map(order=><article key={order.id} className="rounded-2xl border border-white/[.07] bg-[#191e24] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><div className="font-semibold text-white">{order.number==='HOLD'?'Held check':`Order #${order.number}`} <span className="ml-2 text-xs font-normal text-slate-400">{order.customerName}</span></div><div className="mt-1 text-xs text-slate-500">{order.type} · {new Date(order.createdAt).toLocaleString()}</div></div><div className="flex items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-xs ${order.number==='HOLD'?'bg-amber-400/10 text-amber-300':'bg-white/[.06] text-slate-300'}`}>{order.number==='HOLD'?'On hold':order.status}</span>{order.number==='HOLD'?<button onClick={()=>resumeOrder(order)} className="rounded-lg bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]">Resume</button>:order.status!=='Completed'&&<button onClick={()=>changeStatus(order.id)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:border-[#e7b943]/40">Next status</button>}</div></div><div className="mt-3 flex flex-wrap justify-between gap-2 border-t border-white/[.06] pt-3 text-xs text-slate-400"><span>{order.items.map(item=>`${item.qty}× ${item.name}`).join(' · ')}</span><span className="font-semibold text-[#e7b943]">{currency(order.total)} · Paid {currency(order.paid)}</span></div>{order.kitchenNote&&<p className="mt-2 text-xs text-slate-500">Kitchen note: {order.kitchenNote}</p>}</article>)}</div>{!orders.length&&<p className="py-12 text-center text-slate-500">No orders yet.</p>}</section>;
+  const kitchen = (): ReactNode => <div><div className="mb-5">{heading('Live kitchen','Kitchen Display','Advance tickets here; order status is shared with the Orders screen.')}</div><div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">{workflow.slice(0,4).map(status=><section key={status} className={`${panel} min-h-64 p-4`}><div className="mb-3 flex items-center justify-between"><h2 className="font-semibold text-white">{status}</h2><span className="rounded-full bg-white/[.06] px-2 py-1 text-xs text-slate-400">{orders.filter(order=>order.status===status&&order.number!=='HOLD').length}</span></div>{orders.filter(order=>order.status===status&&order.number!=='HOLD').map(order=><article key={order.id} className="mb-3 rounded-xl border border-white/[.07] bg-[#191e24] p-3"><div className="flex justify-between"><strong className="text-white">#{order.number}</strong><span className="text-xs text-slate-500">{new Date(order.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div><div className="mt-3 space-y-1 text-sm text-slate-300">{order.items.map(item=><div key={`${order.id}-${item.id}`}>{item.qty}× {item.name}</div>)}</div>{order.kitchenNote&&<p className="mt-3 rounded-lg bg-amber-300/5 p-2 text-xs text-amber-200">{order.kitchenNote}</p>}<button onClick={()=>changeStatus(order.id)} className="mt-3 w-full rounded-lg bg-[#e7b943] py-2 text-xs font-semibold text-[#17130b]">{status==='Ready'?'Complete order':`Mark ${workflow[workflow.indexOf(status)+1]}`}</button></article>)}{!orders.some(order=>order.status===status&&order.number!=='HOLD')&&<p className="py-8 text-center text-xs text-slate-600">No tickets</p>}</section>)}</div></div>;
+  const inventoryView = (): ReactNode => <section className={`${panel} p-5`}><div className="mb-5 flex items-end justify-between">{heading('Stock control','Inventory','Current stock and reorder thresholds.')}</div><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="text-[11px] uppercase tracking-wider text-slate-500"><tr><th className="pb-3">Ingredient</th><th className="pb-3">Category</th><th className="pb-3">On hand</th><th className="pb-3">Reorder at</th><th className="pb-3">Supplier</th><th className="pb-3">Status</th><th/></tr></thead><tbody>{inventory.map(item=><tr key={item.id} className="border-t border-white/[.06]"><td className="py-3 font-medium text-slate-200">{item.name}</td><td className="py-3 text-slate-400">{item.category}</td><td className="py-3 text-slate-300">{item.stock} {item.unit}</td><td className="py-3 text-slate-400">{item.reorderLevel} {item.unit}</td><td className="py-3 text-slate-400">{item.supplier}</td><td className="py-3"><span className={`rounded-full px-2 py-1 text-[11px] ${item.stock<=item.reorderLevel?'bg-rose-400/10 text-rose-300':'bg-emerald-400/10 text-emerald-300'}`}>{item.stock<=item.reorderLevel?'Restock':'In stock'}</span></td><td className="py-3 text-right"><button onClick={()=>addStock(item)} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-300 hover:border-[#e7b943]/40">Receive stock</button></td></tr>)}</tbody></table></div></section>;
+  const customersView = (): ReactNode => <section className={`${panel} p-5`}><div className="mb-5 flex items-end justify-between gap-3">{heading('Guest relationships','Customers','Customer contact details, loyalty points and outstanding balance.')}<button onClick={addCustomer} className="inline-flex items-center gap-2 rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]"><Plus size={15}/> Add customer</button></div><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{customers.map(customer=><article key={customer.id} className="rounded-2xl border border-white/[.07] bg-[#191e24] p-4"><div className="flex items-center justify-between"><h3 className="font-semibold text-white">{customer.name}</h3><span className="rounded-full bg-[#e7b943]/10 px-2 py-1 text-xs text-[#e7b943]">{customer.loyaltyPoints} pts</span></div><p className="mt-3 text-sm text-slate-400">{customer.phone || 'No phone saved'}</p><p className="mt-1 text-xs text-slate-500">{customer.address || 'No address saved'}</p><div className="mt-4 border-t border-white/[.06] pt-3 text-xs text-slate-400">Outstanding due <strong className="float-right text-white">{currency(customer.due)}</strong></div></article>)}</div></section>;
+  const accounting = (): ReactNode => <div className="grid gap-4 xl:grid-cols-2"><section className={`${panel} p-5`}>{heading('Finance','Recorded sales','Figures below are derived from saved order records.') }<div className="mt-5 space-y-4 text-sm"><div className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"><span>Sales today</span><strong className="text-white">{currency(salesToday)}</strong></div><div className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"><span>Recorded order count</span><strong className="text-white">{orders.filter(order=>order.number!=='HOLD').length}</strong></div><div className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"><span>Payments received</span><strong className="text-white">{currency(orders.filter(order=>order.number!=='HOLD').reduce((n,order)=>n+order.paid,0))}</strong></div><div className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"><span>Customer outstanding</span><strong className="text-white">{currency(customers.reduce((n,c)=>n+c.due,0)+orders.reduce((n,o)=>n+o.due,0))}</strong></div><p className="text-xs leading-5 text-amber-200/70">Profit & loss needs recorded purchases and operating expenses; estimates are intentionally not shown as actuals.</p></div></section><section className={`${panel} p-5`}>{heading('Payables','Supplier balances','Demo supplier records currently available.') }<div className="mt-4 space-y-2">{suppliers.map(supplier=><div key={supplier.id} className="flex items-center justify-between rounded-xl bg-white/[.035] p-3"><div><div className="text-sm text-white">{supplier.name}</div><div className="mt-1 text-xs text-slate-500">{supplier.category} · {supplier.phone}</div></div><strong className="text-sm text-[#e7b943]">{currency(supplier.due)}</strong></div>)}</div></section></div>;
+  const qr = (): ReactNode => <div className="grid gap-4 xl:grid-cols-[1fr_320px]"><section className={`${panel} p-5`}>{heading('Digital menu','Customer QR menu','Customer-facing menu preview using the current product list.') }<div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{products.slice(0,6).map(product=><article key={product.id} className="overflow-hidden rounded-xl border border-white/[.07] bg-[#191e24]"><img src={product.image} alt={product.name} className="h-28 w-full object-cover"/><div className="p-3"><div className="text-sm font-medium text-white">{product.name}</div><div className="mt-1 text-sm text-[#e7b943]">{currency(product.price)}</div></div></article>)}</div></section><section className={`${panel} p-5`}>{heading('Table ordering','QR preview','Live QR generation requires a public hosted menu URL.') }<div className="mt-5 grid aspect-square place-items-center rounded-2xl border border-dashed border-white/15 bg-white p-5 text-center text-sm text-slate-500"><div><Grid2X2 className="mx-auto mb-2 text-slate-700" size={58}/>QR placeholder<br/><span className="text-xs">Not scannable in demo mode</span></div></div></section></div>;
+  const moduleMessages: Record<string,string> = { tables:'Table occupancy, seating and table transfer workflows are not implemented yet.', reservations:'Reservation scheduling and guest reminders are not implemented yet.', menu:'Menu editing and product creation are planned; current products are available in POS.', categories:'Category editing is not implemented yet; category filters are available in POS.', recipes:'Recipe editor and ingredient-to-stock mapping need completion.', purchases:'Purchase orders and receiving history need completion.', delivery:'Dispatch assignment and courier tracking need completion.', expenses:'Expense entry and approval workflows need completion.', employees:'Employee directory is available in demo data; employee editing needs completion.', attendance:'Shift attendance and schedules need completion.', payroll:'Payroll runs, advances and salary payments need completion.', reports:'Dashboard includes actual order totals and item sales; date filtering/export reports need completion.', profit:'Reliable profit & loss requires recorded COGS, purchases, expenses and salaries; not yet implemented.', dues:'Payment collection and customer due ledger need completion.', discounts:'Coupon codes and discount authorization need completion.', roles:'Authentication and enforceable role permissions need a secure backend.', settings:'Restaurant and branch settings need completion.' };
+  const selectedLabel = moduleGroups.flatMap(group=>group.items).find(item=>item.id===view)?.label || 'Dashboard';
+  const placeholder = (): ReactNode => <section className={`${panel} p-6 md:p-8`}><div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#e7b943]/10 text-[#e7b943]"><Activity size={21}/></div><div className="mt-5">{heading('Module status',selectedLabel,'This module is listed for the complete product scope.')}</div><p className="mt-4 max-w-2xl text-sm leading-6 text-slate-400">{moduleMessages[view] || 'This module is planned but is not part of the current working demo.'}</p><div className="mt-6 rounded-xl border border-amber-300/15 bg-amber-300/[.04] p-4 text-xs leading-5 text-amber-100/70">This screen is intentionally marked as incomplete—no demo action or placeholder value is presented as a completed workflow.</div><button onClick={()=>setView('dashboard')} className="mt-5 rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-300 hover:border-white/20">Back to dashboard</button></section>;
+  const content: Record<string,()=>ReactNode> = { dashboard, pos, orders:ordersView, kitchen, inventory:inventoryView, customers:customersView, accounting, qr };
+  const activeContent = content[view] ? content[view]() : placeholder();
 
-  const renderInventory = (): ReactNode => (
-    <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-      <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-white">Inventory & Ingredients</h2>
-          <button className="rounded-xl bg-brand-500 px-3 py-2 text-sm font-semibold text-slate-900">+ Add Stock</button>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          {inventory.map((item) => (
-            <div key={item.id} className="rounded-2xl border border-slate-700 bg-slate-800 p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <div className="font-semibold text-white">{item.name}</div>
-                <span className={`rounded-full px-2 py-1 text-xs ${item.stock <= item.reorderLevel ? 'bg-red-500/10 text-red-300' : 'bg-emerald-500/10 text-emerald-300'}`}>
-                  {item.stock <= item.reorderLevel ? 'Low Stock' : 'In Stock'}
-                </span>
-              </div>
-              <div className="space-y-2 text-sm text-slate-300">
-                <div className="flex justify-between"><span>Stock</span><span>{item.stock} {item.unit}</span></div>
-                <div className="flex justify-between"><span>Supplier</span><span>{item.supplier}</span></div>
-                <div className="flex justify-between"><span>Expiry</span><span>{item.expiry}</span></div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-        <h2 className="mb-5 text-2xl font-bold text-white">Recipe Map</h2>
-        <div className="space-y-4">
-          {products.slice(0, 5).map((product) => (
-            <div key={product.id} className="rounded-2xl border border-slate-700 bg-slate-800 p-4">
-              <div className="mb-2 font-medium text-white">{product.name}</div>
-              <div className="space-y-2 text-sm text-slate-300">
-                {product.recipe.map((ingredient) => (
-                  <div key={`${product.id}-${ingredient.ingredientId}`} className="flex justify-between"><span>{ingredient.name}</span><span>{ingredient.qty}{ingredient.unit}</span></div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderCustomers = (): ReactNode => (
-    <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-      <div className="mb-5 flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-white">Customers</h2>
-        <button className="rounded-xl bg-brand-500 px-3 py-2 text-sm font-semibold text-slate-900">+ New Customer</button>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {customers.map((customer) => (
-          <div key={customer.id} className="rounded-2xl border border-slate-700 bg-slate-800 p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="font-semibold text-white">{customer.name}</div>
-              <span className="rounded-full bg-brand-500/10 px-2 py-1 text-xs text-brand-100">{customer.loyaltyPoints} pts</span>
-            </div>
-            <div className="space-y-2 text-sm text-slate-300">
-              <div>Phone: {customer.phone}</div>
-              <div>Address: {customer.address}</div>
-              <div>Due: {currency(customer.due)}</div>
-              <div>Favorites: {customer.favoriteItems.join(', ')}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderAccounting = (): ReactNode => (
-    <div className="grid gap-6 xl:grid-cols-2">
-      <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-        <h2 className="text-2xl font-bold text-white">Finance Overview</h2>
-        <div className="mt-5 space-y-4 text-sm text-slate-300">
-          <div className="flex justify-between"><span>Daily sales</span><span>{currency(stats.todaySales)}</span></div>
-          <div className="flex justify-between"><span>Total purchases</span><span>{currency(228000)}</span></div>
-          <div className="flex justify-between"><span>Operating expenses</span><span>{currency(stats.expenseTotal)}</span></div>
-          <div className="flex justify-between"><span>Gross profit</span><span>{currency(stats.profit)}</span></div>
-          <div className="flex justify-between"><span>Net profit</span><span>{currency(stats.profit * 0.72)}</span></div>
-        </div>
-      </div>
-
-      <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-        <h2 className="text-2xl font-bold text-white">Supplier Due</h2>
-        <div className="mt-5 space-y-4 text-sm text-slate-300">
-          {suppliers.map((supplier) => (
-            <div key={supplier.id} className="flex items-center justify-between rounded-2xl bg-slate-800 p-3">
-              <div>
-                <div className="font-medium text-white">{supplier.name}</div>
-                <div className="text-xs text-slate-400">{supplier.category}</div>
-              </div>
-              <div className="font-semibold text-brand-100">{currency(supplier.due)}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderSettings = (): ReactNode => (
-    <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
-      <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-        <h2 className="text-2xl font-bold text-white">Roles & Permissions</h2>
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          {['Super Admin', 'Restaurant Owner', 'Manager', 'Cashier', 'Kitchen Staff', 'Inventory Manager', 'Accountant', 'Delivery Staff'].map((role) => (
-            <div key={role} className="rounded-2xl border border-slate-700 bg-slate-800 p-4">
-              <div className="mb-2 font-semibold text-white">{role}</div>
-              <div className="text-sm text-slate-300">{role === 'Super Admin' ? 'Full access' : role === 'Cashier' ? 'POS + orders' : role === 'Kitchen Staff' ? 'KDS view' : 'Operational access'}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-        <h2 className="text-2xl font-bold text-white">Audit Log</h2>
-        <div className="mt-5 space-y-3">
-          {auditLogs.map((entry) => (
-            <div key={entry.id} className="rounded-2xl border border-slate-700 bg-slate-800 p-3">
-              <div className="font-medium text-white">{entry.title}</div>
-              <div className="mt-1 text-sm text-slate-300">{entry.detail}</div>
-              <div className="mt-2 text-xs text-slate-400">{entry.time}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderQrMenu = (): ReactNode => (
-    <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-      <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-        <h2 className="text-2xl font-bold text-white">QR Menu Ordering</h2>
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          {products.slice(0, 6).map((product) => (
-            <div key={product.id} className="rounded-2xl border border-slate-700 bg-slate-800 p-3">
-              <img src={product.image} alt={product.name} className="mb-3 h-28 w-full rounded-xl object-cover" />
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-medium text-white">{product.name}</div>
-                  <div className="text-sm text-brand-100">{currency(product.price)}</div>
-                </div>
-                <button className="rounded-xl bg-brand-500 px-3 py-2 text-sm font-semibold text-slate-900">Add</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-        <h3 className="text-xl font-semibold text-white">QR for Table 8</h3>
-        <div className="mt-5 rounded-3xl bg-white p-6 text-center shadow-soft">
-          <div className="mx-auto grid h-52 w-52 place-items-center border-2 border-dashed border-slate-800 text-5xl text-slate-800">QR</div>
-        </div>
-      </div>
-    </div>
-  );
-
-  const views: Record<string, ReactNode> = {
-    dashboard: renderDashboard(),
-    pos: renderPos(),
-    orders: renderOrders(),
-    kitchen: renderKitchen(),
-    inventory: renderInventory(),
-    customers: renderCustomers(),
-    accounting: renderAccounting(),
-    settings: renderSettings(),
-    qr: renderQrMenu()
-  };
-
-  return (
-    <div className="min-h-screen bg-shell text-slate-100">
-      <div className="mx-auto max-w-[1500px] px-4 py-6 lg:px-6">
-        <header className="mb-6 flex flex-col gap-5 rounded-[28px] border border-slate-700 bg-[#121821]/90 p-4 shadow-soft md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-500 text-2xl font-black text-slate-900">M</div>
-            <div>
-              <div className="text-3xl font-black tracking-tight text-white">Musafir</div>
-              <div className="text-xs uppercase tracking-[0.35em] text-brand-200">Fast Food</div>
-            </div>
-          </div>
-
-          <div className="flex flex-1 items-center justify-center gap-3 rounded-2xl border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm text-slate-300">
-            <span className="font-medium text-white">Good Food • Good Mood</span>
-            <span className="text-brand-200">{new Date().toLocaleDateString()}</span>
-          </div>
-
-          <div className="flex items-center gap-3 text-sm text-slate-200">
-            <div className="rounded-full bg-brand-500/10 px-3 py-2 text-brand-100">Online</div>
-            <div className="rounded-full border border-slate-700 bg-slate-900 px-3 py-2">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-          </div>
-        </header>
-
-        <div className="grid gap-6 xl:grid-cols-[250px_1fr]">
-          <aside className="rounded-[28px] border border-slate-700 bg-[#121821]/90 p-4 shadow-soft">
-            <div className="mb-6 flex items-center gap-3 rounded-2xl bg-brand-500/10 p-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-500 font-bold text-slate-900">A</div>
-              <div>
-                <div className="font-semibold text-white">Admin</div>
-                <div className="text-xs text-brand-200">Super Admin</div>
-              </div>
-            </div>
-
-            <nav className="space-y-2">
-              {navItems.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => setSelectedView(item.id)}
-                  className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${selectedView === item.id ? 'bg-brand-500 text-slate-900' : 'bg-slate-900 text-slate-200 hover:bg-slate-800'}`}
-                >
-                  <span>{item.label}</span>
-                </button>
-              ))}
-            </nav>
-          </aside>
-
-          <main className="space-y-6">{views[selectedView]}</main>
-        </div>
-      </div>
-    </div>
-  );
+  return <div className={`${light?'theme-light':''} min-h-screen bg-[#0e1114] text-slate-100`}><div className="flex min-h-screen"><aside className={`fixed inset-y-0 left-0 z-40 flex w-[260px] flex-col border-r border-white/[.06] bg-[#111519] transition-transform lg:static lg:translate-x-0 ${mobileNav?'translate-x-0':'-translate-x-full'}`}><div className="flex h-[76px] items-center gap-3 border-b border-white/[.06] px-5"><div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-[#f0ca69] to-[#b37a18] font-serif text-xl font-black text-[#201707]">M</div><div><div className="font-serif text-lg font-bold tracking-wide text-white">Musafir</div><div className="text-[9px] uppercase tracking-[.28em] text-[#cba84c]">Fast Food</div></div><button onClick={()=>setMobileNav(false)} className="ml-auto text-slate-500 lg:hidden"><X size={19}/></button></div><div className="mx-3 mt-4 flex items-center gap-3 rounded-xl border border-white/[.06] bg-white/[.025] p-3"><div className="grid h-9 w-9 place-items-center rounded-full bg-[#e7b943] text-sm font-bold text-[#211908]">A</div><div className="min-w-0"><div className="text-sm font-medium text-white">Admin</div><div className="text-[11px] text-slate-500">Restaurant owner</div></div><span className="ml-auto h-2 w-2 rounded-full bg-emerald-400"/></div><nav className="custom-scrollbar flex-1 space-y-5 overflow-y-auto px-3 py-5">{moduleGroups.map(group=><div key={group.title}><div className="mb-2 px-3 text-[9px] font-bold uppercase tracking-[.2em] text-slate-600">{group.title}</div><div className="space-y-1">{group.items.map(item=><button key={item.id} onClick={()=>{setView(item.id);setMobileNav(false);}} className={`nav-item ${view===item.id?'nav-active':''}`}><item.icon size={16} strokeWidth={1.8}/><span className="flex-1 text-left">{item.label}</span>{item.id==='pos'&&cart.length>0&&<span className="rounded-full bg-[#e7b943] px-1.5 py-0.5 text-[10px] font-bold text-black">{cart.reduce((n,i)=>n+i.qty,0)}</span>}</button>)}</div></div>)}</nav><div className="border-t border-white/[.06] p-3"><div className="rounded-xl bg-gradient-to-r from-[#211d13] to-[#17191a] p-3"><div className="text-xs font-medium text-[#ead18b]">Good Food • Good Mood</div><div className="mt-1 text-[10px] text-slate-500">Premium service, made simple.</div></div><button onClick={()=>flash('Sign out requires authentication, which is not yet configured.')} className="mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs text-slate-500 hover:bg-white/[.04] hover:text-slate-300"><LogOut size={15}/>Sign out</button></div></aside>
+    {mobileNav&&<button aria-label="Close navigation" onClick={()=>setMobileNav(false)} className="fixed inset-0 z-30 bg-black/60 lg:hidden"/>}<div className="min-w-0 flex-1"><header className="sticky top-0 z-20 flex h-[76px] items-center justify-between border-b border-white/[.06] bg-[#101417]/90 px-4 backdrop-blur-xl md:px-7"><div className="flex items-center gap-3"><button onClick={()=>setMobileNav(true)} className="rounded-lg p-2 text-slate-400 hover:bg-white/5 lg:hidden"><Menu size={20}/></button><div className="hidden items-center gap-2 text-xs text-slate-500 sm:flex"><span>Musafir</span><span>/</span><span className="text-slate-200">{selectedLabel}</span></div><div className="sm:hidden text-sm font-medium text-white">{selectedLabel}</div></div><div className="flex items-center gap-2 md:gap-4"><div className="hidden items-center gap-2 rounded-lg border border-white/[.07] bg-white/[.025] px-3 py-2 text-xs text-slate-500 md:flex"><Search size={14}/><span>Search menu items…</span><kbd className="ml-6 rounded border border-white/10 px-1.5 py-0.5 text-[10px]">⌘ K</kbd></div><button onClick={()=>flash(lowStock.length?`${lowStock.length} inventory item(s) are at or below reorder level.`:'No new alerts.')} className="relative rounded-lg p-2 text-slate-400 hover:bg-white/5"><Bell size={18}/>{lowStock.length>0&&<span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-amber-400"/>}</button><button onClick={()=>setLight(value=>!value)} className="rounded-lg border border-white/[.08] px-2.5 py-1.5 text-[11px] text-slate-400">{light?'Light':'Dark'}</button><div className="hidden items-center gap-2 border-l border-white/[.08] pl-3 sm:flex"><div className="text-right"><div className="text-xs font-medium text-slate-200">Admin</div><div className="text-[10px] text-slate-500">Owner</div></div><ChevronDown size={14} className="text-slate-500"/></div></div></header><main className="mx-auto max-w-[1600px] px-4 py-5 md:px-7 md:py-7">{activeContent}<footer className="mt-8 flex flex-wrap items-center justify-between gap-2 border-t border-white/[.05] pt-4 text-[10px] text-slate-600"><span>Musafir Fast Food · Restaurant operations</span><span>Good Food • Good Mood</span></footer></main></div></div>{toast&&<div role="status" className="fixed bottom-5 right-5 z-50 max-w-sm rounded-xl border border-[#e7b943]/20 bg-[#1a1e21] px-4 py-3 text-sm text-slate-200 shadow-2xl">{toast}</div>}</div>;
 }
 
 export default App;
