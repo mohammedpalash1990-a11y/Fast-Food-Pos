@@ -58,8 +58,8 @@ function App() {
       try {
         const headers = { Authorization: `Bearer ${apiToken}` };
         const [ordersResponse, inventoryResponse] = await Promise.all([
-          fetch(`${apiBase.replace(/\\/$/, '')}/api/orders?limit=150`, { headers }),
-          fetch(`${apiBase.replace(/\\/$/, '')}/api/inventory`, { headers })
+          fetch(`${apiBase.replace(/\/$/, '')}/api/orders?limit=150`, { headers }),
+          fetch(`${apiBase.replace(/\/$/, '')}/api/inventory`, { headers })
         ]);
         if (!ordersResponse.ok || !inventoryResponse.ok) return;
         const [orderData, inventoryData] = await Promise.all([ordersResponse.json(), inventoryResponse.json()]);
