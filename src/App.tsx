@@ -530,9 +530,9 @@ function App() {
   const createPayroll = () => {
     if (!employees.length) { flash('Add an employee before creating payroll.'); return; }
     const period = window.prompt('Payroll month (YYYY-MM)', localDate().slice(0, 7)) || '';
-    if (!/^\\d{4}-(0[1-9]|1[0-2])$/.test(period)) { flash('Enter a valid payroll month in YYYY-MM format.'); return; }
-    const employeeOptions = employees.map((employee, index) => `${index + 1}. ${employee.name} · ${currency(employee.salary)}`).join('\\n');
-    const choice = Number(window.prompt(`Select employee:\\n${employeeOptions}`, '1'));
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) { flash('Enter a valid payroll month in YYYY-MM format.'); return; }
+    const employeeOptions = employees.map((employee, index) => `${index + 1}. ${employee.name} · ${currency(employee.salary)}`).join('\n');
+    const choice = Number(window.prompt(`Select employee:\n${employeeOptions}`, '1'));
     if (!Number.isInteger(choice) || choice < 1 || choice > employees.length) { flash('Select a valid employee.'); return; }
     const employee = employees[choice - 1];
     if (payroll.some(item => item.employeeId === employee.id && item.period === period)) { flash('Payroll already exists for this employee and month.'); return; }
