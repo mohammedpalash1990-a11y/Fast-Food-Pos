@@ -16,6 +16,8 @@ const moduleGroups = [
 ];
 const workflow: OrderStatus[] = ['Pending', 'Accepted', 'Preparing', 'Ready', 'Completed'];
 
+type ExpenseRecord = { id: string; date: string; category: string; description: string; amount: number; paymentMethod: PaymentMethod; createdAt: string };
+
 function App() {
   const [view, setView] = useState('dashboard');
   const [products, setProducts] = useState<Product[]>(() => safeRead('musafir-products', demoProducts));
@@ -25,6 +27,7 @@ function App() {
   const [cart, setCart] = useState<CartItem[]>(() => safeRead('musafir-cart', []));
   const [employees, setEmployees] = useState(() => safeRead('musafir-employees', demoEmployees));
   const [suppliers, setSuppliers] = useState(() => safeRead('musafir-suppliers', demoSuppliers));
+  const [expenses, setExpenses] = useState<ExpenseRecord[]>(() => safeRead('musafir-expenses', []));
   const [logs, setLogs] = useState(() => safeRead('musafir-audit', demoAuditLogs));
   const [category, setCategory] = useState('All');
   const [search, setSearch] = useState('');
@@ -53,6 +56,7 @@ function App() {
   useEffect(() => { save('musafir-cart', cart); }, [cart]);
   useEffect(() => { save('musafir-employees', employees); }, [employees]);
   useEffect(() => { save('musafir-suppliers', suppliers); }, [suppliers]);
+  useEffect(() => { save('musafir-expenses', expenses); }, [expenses]);
   useEffect(() => { save('musafir-audit', logs); }, [logs]);
 
   useEffect(() => {
@@ -297,9 +301,9 @@ function App() {
   const exportBackup = () => {
     const backup = {
       app: 'Musafir Fast Food POS',
-      formatVersion: 1,
+      formatVersion: 2,
       exportedAt: new Date().toISOString(),
-      data: { products, inventory, customers, orders, cart, employees, suppliers, logs }
+      data: { products, inventory, customers, orders, cart, employees, suppliers, expenses, logs }
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -318,7 +322,7 @@ function App() {
       const parsed = JSON.parse(await file.text());
       const data = parsed?.data;
       const required = ['products', 'inventory', 'customers', 'orders', 'cart', 'employees', 'suppliers', 'logs'];
-      if (parsed?.app !== 'Musafir Fast Food POS' || parsed?.formatVersion !== 1 || !data || required.some(key => !Array.isArray(data[key]))) {
+      if (parsed?.app !== 'Musafir Fast Food POS' || ![1, 2].includes(parsed?.formatVersion) || !data || required.some(key => !Array.isArray(data[key])) || (data.expenses !== undefined && !Array.isArray(data.expenses))) {
         throw new Error('This is not a valid Musafir POS backup file.');
       }
       if (!window.confirm('Restore this backup? Current POS data on this device will be replaced.')) return;
@@ -329,6 +333,7 @@ function App() {
       setCart(data.cart);
       setEmployees(data.employees);
       setSuppliers(data.suppliers);
+      setExpenses(Array.isArray(data.expenses) ? data.expenses : []);
       setLogs(data.logs);
       setBackupMessage('Backup restored on this device.');
     } catch (error) {
@@ -346,7 +351,7 @@ function App() {
       <input ref={backupInputRef} type="file" accept="application/json,.json" className="hidden" onChange={event => { void importBackup(event.target.files?.[0]); }} />
     </div>
     {backupMessage && <p role="status" className="mt-3 text-xs text-slate-300">{backupMessage}</p>}
-    <p className="mt-3 text-xs leading-5 text-amber-200/70">Backups contain saved orders, products, stock, customers, employees, suppliers and audit history. Store backup files securely. This does not copy data from the connected server database.</p>
+    <p className="mt-3 text-xs leading-5 text-amber-200/70">Backups contain saved orders, products, stock, customers, employees, suppliers, expenses and audit history. Store backup files securely. This does not copy data from the connected server database.</p>
   </section><section className={`${panel} max-w-2xl p-5 md:p-7`}>
     <div className="mb-5">{heading('System integration','Backend connection','Connect this POS to the live Saudi branch database.')}</div>
     <label className="mb-1 block text-xs text-slate-400">Backend API URL</label>
@@ -455,13 +460,53 @@ function App() {
     <div className="mb-5">{heading('Daily operations','Staff attendance','Cycle each employee through Present, Absent and On Leave. Changes are saved locally.')}</div>
     <div className="space-y-2">{employees.map(employee=><div key={employee.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white/[.035] p-3"><div><div className="text-sm font-medium text-white">{employee.name}</div><div className="mt-1 text-xs text-slate-500">{employee.role} · {employee.shift}</div></div><div className="flex items-center gap-2"><span className="text-xs text-slate-400">{employee.status}</span><button onClick={()=>updateAttendance(employee)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-200">Change status</button></div></div>)}</div>
   </section>;
+  const addExpense = () => {
+    const categories = ['Rent', 'Utilities', 'Staff welfare', 'Transport', 'Maintenance', 'Packaging', 'Cleaning', 'Marketing', 'Other'];
+    const category = window.prompt(`Expense category (\n${categories.join(', ')}\n)`, 'Other');
+    if (!category?.trim()) return;
+    const description = window.prompt('Expense description');
+    if (!description?.trim()) return;
+    const amount = Number(window.prompt('Amount (SAR)', '0'));
+    if (!Number.isFinite(amount) || amount <= 0) { flash('Enter an expense amount greater than zero.'); return; }
+    const paymentMethod = (window.prompt('Payment method: Cash or Mada', 'Cash') || 'Cash').trim();
+    if (!['Cash', 'Mada'].includes(paymentMethod)) { flash('Payment method must be Cash or Mada.'); return; }
+    const date = window.prompt('Expense date (YYYY-MM-DD)', new Date().toISOString().slice(0, 10)) || new Date().toISOString().slice(0, 10);
+    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T00:00:00`).getTime())) { flash('Enter a valid date in YYYY-MM-DD format.'); return; }
+    const expense: ExpenseRecord = { id: `expense-${Date.now()}`, date, category: category.trim(), description: description.trim(), amount, paymentMethod: paymentMethod as PaymentMethod, createdAt: new Date().toISOString() };
+    setExpenses(current => [expense, ...current]);
+    setLogs(current => [{ id: `expense-log-${Date.now()}`, title: 'Expense recorded', detail: `${expense.category} · ${expense.description} · ${currency(amount)} · ${paymentMethod}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
+    flash('Expense saved on this device.');
+  };
+  const deleteExpense = (expense: ExpenseRecord) => {
+    if (!window.confirm(`Delete expense “${expense.description}” for ${currency(expense.amount)}?`)) return;
+    setExpenses(current => current.filter(item => item.id !== expense.id));
+    setLogs(current => [{ id: `expense-delete-${Date.now()}`, title: 'Expense deleted', detail: `${expense.description} · ${currency(expense.amount)}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
+    flash('Expense deleted.');
+  };
+  const expensesView = (): ReactNode => {
+    const today = new Date().toISOString().slice(0, 10);
+    const month = today.slice(0, 7);
+    const todayTotal = expenses.filter(item => item.date === today).reduce((sum, item) => sum + item.amount, 0);
+    const monthTotal = expenses.filter(item => item.date.startsWith(month)).reduce((sum, item) => sum + item.amount, 0);
+    const categoryTotals = expenses.reduce<Record<string, number>>((totals, item) => { totals[item.category] = (totals[item.category] || 0) + item.amount; return totals; }, {});
+    return <div className="space-y-4">
+      <section className={`${panel} p-5`}>
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Finance control','Operating expenses','Record and review shop expenses in SAR. These records are stored locally on this device.')}<button onClick={addExpense} className="inline-flex items-center gap-2 rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]"><Plus size={15}/> Add expense</button></div>
+        <div className="mb-5 grid gap-3 sm:grid-cols-3">
+          {[{label:'Today',value:todayTotal},{label:'This month',value:monthTotal},{label:'All recorded',value:expenses.reduce((sum,item)=>sum+item.amount,0)}].map(card=><div key={card.label} className="rounded-xl border border-white/[.06] bg-white/[.025] p-4"><div className="text-xs text-slate-400">{card.label}</div><div className="mt-2 text-xl font-semibold text-white">{currency(card.value)}</div></div>)}
+        </div>
+        {Object.keys(categoryTotals).length>0&&<div className="mb-5 flex flex-wrap gap-2">{Object.entries(categoryTotals).sort((a,b)=>b[1]-a[1]).map(([name,amount])=><span key={name} className="rounded-lg border border-white/[.07] bg-white/[.025] px-3 py-2 text-xs text-slate-300">{name} <strong className="ml-1 text-[#e7b943]">{currency(amount)}</strong></span>)}</div>}
+        <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="pb-3">Date</th><th className="pb-3">Category</th><th className="pb-3">Description</th><th className="pb-3">Payment</th><th className="pb-3 text-right">Amount</th><th className="pb-3"/></tr></thead><tbody>{expenses.slice().sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt)).map(item=><tr key={item.id} className="border-t border-white/[.06]"><td className="py-3 text-slate-400">{item.date}</td><td className="py-3 text-slate-300">{item.category}</td><td className="py-3 font-medium text-white">{item.description}</td><td className="py-3 text-slate-400">{item.paymentMethod}</td><td className="py-3 text-right font-semibold text-white">{currency(item.amount)}</td><td className="py-3 text-right"><button onClick={()=>deleteExpense(item)} className="rounded-lg border border-rose-400/15 px-2.5 py-1.5 text-xs text-rose-300">Delete</button></td></tr>)}</tbody></table>{!expenses.length&&<p className="py-10 text-center text-sm text-slate-500">No expenses recorded. Add the first shop expense to start tracking.</p>}</div>
+      </section>
+    </div>;
+  };
   const customersView = (): ReactNode => <section className={`${panel} p-5`}><div className="mb-5 flex items-end justify-between gap-3">{heading('Guest relationships','Customers','Customer contact details and loyalty points.')}<button onClick={addCustomer} className="inline-flex items-center gap-2 rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]"><Plus size={15}/> Add customer</button></div><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{customers.map(customer=><article key={customer.id} className="rounded-2xl border border-white/[.07] bg-[#191e24] p-4"><div className="flex items-center justify-between"><h3 className="font-semibold text-white">{customer.name}</h3><span className="rounded-full bg-[#e7b943]/10 px-2 py-1 text-xs text-[#e7b943]">{customer.loyaltyPoints} pts</span></div><p className="mt-3 text-sm text-slate-400">{customer.phone || 'No phone saved'}</p><p className="mt-1 text-xs text-slate-500">{customer.address || 'No address saved'}</p><div className="mt-4 border-t border-white/[.06] pt-3 text-xs text-slate-400">Loyalty account <strong className="float-right text-white">Active</strong></div></article>)}</div></section>;
   const accounting = (): ReactNode => <div className="grid gap-4 xl:grid-cols-2"><section className={`${panel} p-5`}>{heading('Finance','Recorded sales','Figures below are derived from saved order records.') }<div className="mt-5 space-y-4 text-sm"><div className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"><span>Sales today</span><strong className="text-white">{currency(salesToday)}</strong></div><div className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"><span>Recorded order count</span><strong className="text-white">{orders.filter(order=>order.number!=='HOLD').length}</strong></div><div className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"><span>Payments received</span><strong className="text-white">{currency(orders.filter(order=>order.number!=='HOLD').reduce((n,order)=>n+order.paid,0))}</strong></div><div className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"></div><p className="text-xs leading-5 text-amber-200/70">Profit & loss needs recorded purchases and operating expenses; estimates are intentionally not shown as actuals.</p></div></section><section className={`${panel} p-5`}>{heading('Payables','Supplier balances','Demo supplier records currently available.') }<div className="mt-4 space-y-2">{suppliers.map(supplier=><div key={supplier.id} className="flex items-center justify-between rounded-xl bg-white/[.035] p-3"><div><div className="text-sm text-white">{supplier.name}</div><div className="mt-1 text-xs text-slate-500">{supplier.category} · {supplier.phone}</div></div><strong className="text-sm text-[#e7b943]">{currency(supplier.due)}</strong></div>)}</div></section></div>;
   const qr = (): ReactNode => <div className="grid gap-4 xl:grid-cols-[1fr_320px]"><section className={`${panel} p-5`}>{heading('Digital menu','Customer QR menu','Customer-facing menu preview using the current product list.') }<div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{products.slice(0,6).map(product=><article key={product.id} className="overflow-hidden rounded-xl border border-white/[.07] bg-[#191e24]"><img src={product.image} alt={product.name} className="h-28 w-full object-cover"/><div className="p-3"><div className="text-sm font-medium text-white">{product.name}</div><div className="mt-1 text-sm text-[#e7b943]">{currency(product.price)}</div></div></article>)}</div></section><section className={`${panel} p-5`}>{heading('Table ordering','QR preview','Live QR generation requires a public hosted menu URL.') }<div className="mt-5 grid aspect-square place-items-center rounded-2xl border border-dashed border-white/15 bg-white p-5 text-center text-sm text-slate-500"><div><Grid2X2 className="mx-auto mb-2 text-slate-700" size={58}/>QR placeholder<br/><span className="text-xs">Not scannable in demo mode</span></div></div></section></div>;
-  const moduleMessages: Record<string,string> = { tables:'Table occupancy, seating and table transfer workflows are not implemented yet.', reservations:'Reservation scheduling and guest reminders are not implemented yet.', menu:'Menu editing and product creation are planned; current products are available in POS.', categories:'Category editing is not implemented yet; category filters are available in POS.', recipes:'Recipe editor and ingredient-to-stock mapping need completion.', purchases:'Purchase orders and receiving history need completion.', delivery:'Dispatch assignment and courier tracking need completion.', expenses:'Expense entry and approval workflows need completion.', employees:'Manage employee profiles, monthly salaries and shift details in local POS storage.', attendance:'Update daily employee attendance status in local POS storage.', payroll:'Payroll runs, advances and salary payments need completion.', reports:'Dashboard includes actual order totals and item sales; date filtering/export reports need completion.', profit:'Reliable profit & loss requires recorded COGS, purchases, expenses and salaries; not yet implemented.',  discounts:'Coupon codes and discount authorization need completion.', roles:'Authentication and enforceable role permissions need a secure backend.', settings:'Restaurant and branch settings need completion.' };
+  const moduleMessages: Record<string,string> = { tables:'Table occupancy, seating and table transfer workflows are not implemented yet.', reservations:'Reservation scheduling and guest reminders are not implemented yet.', menu:'Menu editing and product creation are planned; current products are available in POS.', categories:'Category editing is not implemented yet; category filters are available in POS.', recipes:'Recipe editor and ingredient-to-stock mapping need completion.', purchases:'Purchase orders and receiving history need completion.', delivery:'Dispatch assignment and courier tracking need completion.', expenses:'Record shop operating expenses, payment method and expense date; review daily and monthly totals.', employees:'Manage employee profiles, monthly salaries and shift details in local POS storage.', attendance:'Update daily employee attendance status in local POS storage.', payroll:'Payroll runs, advances and salary payments need completion.', reports:'Dashboard includes actual order totals and item sales; date filtering/export reports need completion.', profit:'Reliable profit & loss requires recorded COGS, purchases, expenses and salaries; not yet implemented.',  discounts:'Coupon codes and discount authorization need completion.', roles:'Authentication and enforceable role permissions need a secure backend.', settings:'Restaurant and branch settings need completion.' };
   const selectedLabel = moduleGroups.flatMap(group=>group.items).find(item=>item.id===view)?.label || 'Dashboard';
   const placeholder = (): ReactNode => <section className={`${panel} p-6 md:p-8`}><div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#e7b943]/10 text-[#e7b943]"><Activity size={21}/></div><div className="mt-5">{heading('Module status',selectedLabel,'This module is listed for the complete product scope.')}</div><p className="mt-4 max-w-2xl text-sm leading-6 text-slate-400">{moduleMessages[view] || 'This module is planned but is not part of the current working demo.'}</p><div className="mt-6 rounded-xl border border-amber-300/15 bg-amber-300/[.04] p-4 text-xs leading-5 text-amber-100/70">This screen is intentionally marked as incomplete—no demo action or placeholder value is presented as a completed workflow.</div><button onClick={()=>setView('dashboard')} className="mt-5 rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-300 hover:border-white/20">Back to dashboard</button></section>;
-  const content: Record<string,()=>ReactNode> = { dashboard, pos, orders:ordersView, kitchen, inventory:inventoryView, customers:customersView, employees:employeesView, attendance:attendanceView, accounting, qr, settings:apiSettings };
+  const content: Record<string,()=>ReactNode> = { dashboard, pos, orders:ordersView, kitchen, inventory:inventoryView, customers:customersView, employees:employeesView, attendance:attendanceView, expenses:expensesView, accounting, qr, settings:apiSettings };
   const activeContent = content[view] ? content[view]() : placeholder();
 
   return <div className={`${light?'theme-light':''} min-h-screen bg-[#0e1114] text-slate-100`}><div className="flex min-h-screen"><aside className={`fixed inset-y-0 left-0 z-40 flex w-[260px] flex-col border-r border-white/[.06] bg-[#111519] transition-transform lg:static lg:translate-x-0 ${mobileNav?'translate-x-0':'-translate-x-full'}`}><div className="flex h-[76px] items-center gap-3 border-b border-white/[.06] px-5"><div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-[#f0ca69] to-[#b37a18] font-serif text-xl font-black text-[#201707]">M</div><div><div className="font-serif text-lg font-bold tracking-wide text-white">Musafir</div><div className="text-[9px] uppercase tracking-[.28em] text-[#cba84c]">Fast Food</div></div><button onClick={()=>setMobileNav(false)} className="ml-auto text-slate-500 lg:hidden"><X size={19}/></button></div><div className="mx-3 mt-4 flex items-center gap-3 rounded-xl border border-white/[.06] bg-white/[.025] p-3"><div className="grid h-9 w-9 place-items-center rounded-full bg-[#e7b943] text-sm font-bold text-[#211908]">A</div><div className="min-w-0"><div className="text-sm font-medium text-white">Admin</div><div className="text-[11px] text-slate-500">Restaurant owner</div></div><span className="ml-auto h-2 w-2 rounded-full bg-emerald-400"/></div><nav className="custom-scrollbar flex-1 space-y-5 overflow-y-auto px-3 py-5">{moduleGroups.map(group=><div key={group.title}><div className="mb-2 px-3 text-[9px] font-bold uppercase tracking-[.2em] text-slate-600">{group.title}</div><div className="space-y-1">{group.items.map(item=><button key={item.id} onClick={()=>{setView(item.id);setMobileNav(false);}} className={`nav-item ${view===item.id?'nav-active':''}`}><item.icon size={16} strokeWidth={1.8}/><span className="flex-1 text-left">{item.label}</span>{item.id==='pos'&&cart.length>0&&<span className="rounded-full bg-[#e7b943] px-1.5 py-0.5 text-[10px] font-bold text-black">{cart.reduce((n,i)=>n+i.qty,0)}</span>}</button>)}</div></div>)}</nav><div className="border-t border-white/[.06] p-3"><div className="rounded-xl bg-gradient-to-r from-[#211d13] to-[#17191a] p-3"><div className="text-xs font-medium text-[#ead18b]">Good Food • Good Mood</div><div className="mt-1 text-[10px] text-slate-500">Premium service, made simple.</div></div><button onClick={()=>flash('Sign out requires authentication, which is not yet configured.')} className="mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs text-slate-500 hover:bg-white/[.04] hover:text-slate-300"><LogOut size={15}/>Sign out</button></div></aside>
