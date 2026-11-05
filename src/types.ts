@@ -63,7 +63,6 @@ export interface Order {
   discount: number;
   total: number;
   paid: number;
-  due: number;
   paymentMethod: PaymentMethod;
   kitchenNote?: string;
 }
