@@ -84,9 +84,9 @@ export const demoInventory: InventoryItem[] = [
 ];
 
 export const demoCustomers: Customer[] = [
-  { id:'c1', name:'Sara Ahmed', phone:'+966500000001', address:'Riyadh, Saudi Arabia', due: 0, loyaltyPoints: 420, favoriteItems:['Chicken Burger','Cold Coffee'] },
-  { id:'c2', name:'Omar Hassan', phone:'+966500000002', address:'Jeddah, Saudi Arabia', due: 0, loyaltyPoints: 180, favoriteItems:['Zinger Burger','French Fries'] },
-  { id:'c3', name:'Lina Ali', phone:'+966500000003', address:'Dammam, Saudi Arabia', due: 0, loyaltyPoints: 560, favoriteItems:['Medium Pizza','Chicken Combo'] }
+  { id:'c1', name:'Sara Ahmed', phone:'+966500000001', address:'Riyadh, Saudi Arabia', loyaltyPoints: 420, favoriteItems:['Chicken Burger','Cold Coffee'] },
+  { id:'c2', name:'Omar Hassan', phone:'+966500000002', address:'Jeddah, Saudi Arabia', loyaltyPoints: 180, favoriteItems:['Zinger Burger','French Fries'] },
+  { id:'c3', name:'Lina Ali', phone:'+966500000003', address:'Dammam, Saudi Arabia', loyaltyPoints: 560, favoriteItems:['Medium Pizza','Chicken Combo'] }
 ];
 
 export const demoOrders: Order[] = [
