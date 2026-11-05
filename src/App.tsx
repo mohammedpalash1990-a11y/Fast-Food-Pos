@@ -195,13 +195,36 @@ function App() {
       }
       return;
     }
+    const deductions = new Map<string, number>();
+    cart.forEach(item => products.find(product => product.id === item.productId)?.recipe.forEach(ingredient => {
+      const key = ingredient.name.trim().toLowerCase();
+      deductions.set(key, (deductions.get(key) || 0) + ingredient.qty * item.qty);
+    }));
+    const shortages = inventory.filter(item => {
+      const required = deductions.get(item.name.trim().toLowerCase()) || 0;
+      return required > item.stock;
+    });
+    if (shortages.length) {
+      flash(`Insufficient stock: ${shortages.map(item => item.name).join(', ')}. Receive stock before checkout.`);
+      return;
+    }
     const number = nextNumber();
     const order: Order = { id: `o-${number}`, number, type: orderType, status: 'Pending', createdAt: new Date().toISOString(), customerName: 'Walk-in Guest', items: cart.map(item => ({ id: item.id, productId: item.productId, name: item.name, qty: item.qty, unitPrice: item.price, note: note || undefined })), subtotal, tax, discount: discountAmount, total, paid: total, due: 0, paymentMethod: payMethod, kitchenNote: note || undefined };
-    const deductions = new Map<string, number>();
-    cart.forEach(item => products.find(product => product.id === item.productId)?.recipe.forEach(ingredient => { const key = ingredient.name.toLowerCase(); deductions.set(key, (deductions.get(key) || 0) + ingredient.qty * item.qty); }));
-    setInventory(current => current.map(item => { const amount = deductions.get(item.name.toLowerCase()) || 0; return amount ? { ...item, stock: Math.max(0, item.stock - amount) } : item; }));
+    setInventory(current => current.map(item => {
+      const amount = deductions.get(item.name.trim().toLowerCase()) || 0;
+      return amount ? { ...item, stock: item.stock - amount } : item;
+    }));
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const stockLogs = inventory.flatMap(item => {
+      const amount = deductions.get(item.name.trim().toLowerCase()) || 0;
+      return amount ? [{ id: `consume-${number}-${item.id}`, title: 'Stock consumed', detail: `Order #${number} · ${item.name} · -${amount} ${item.unit}`, time }] : [];
+    });
     setOrders(current => [order, ...current]);
-    setLogs(current => [{ id: `log-${Date.now()}`, title: 'Sale completed', detail: `Order #${number} · ${currency(total)} · ${payMethod}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
+    setLogs(current => [
+      { id: `log-${Date.now()}`, title: 'Sale completed', detail: `Order #${number} · ${currency(total)} · ${payMethod}`, time },
+      ...stockLogs,
+      ...current
+    ]);
     clearCart(); setView('orders'); flash(`Order #${number} placed successfully (offline demo).`);
   };
   const connectBackend = async () => {
