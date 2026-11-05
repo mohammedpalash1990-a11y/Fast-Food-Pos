@@ -106,7 +106,6 @@ export const demoOrders: Order[] = [
     discount: 0,
     total: 55.2,
     paid: 55.2,
-    due: 0,
     paymentMethod: 'Cash',
     kitchenNote: 'No onions' 
   },
@@ -126,7 +125,6 @@ export const demoOrders: Order[] = [
     discount: 0,
     total: 75.9,
     paid: 75.9,
-    due: 0,
     paymentMethod: 'Mada',
     kitchenNote: 'Extra cheese' 
   },
@@ -145,7 +143,6 @@ export const demoOrders: Order[] = [
     discount: 0,
     total: 40.25,
     paid: 40.25,
-    due: 0,
     paymentMethod: 'Mada',
     kitchenNote: 'Add spicy sauce' 
   }
