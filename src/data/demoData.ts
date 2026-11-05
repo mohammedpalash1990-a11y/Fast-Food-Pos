@@ -85,7 +85,7 @@ export const demoInventory: InventoryItem[] = [
 
 export const demoCustomers: Customer[] = [
   { id:'c1', name:'Sara Ahmed', phone:'+966500000001', address:'Riyadh, Saudi Arabia', due: 0, loyaltyPoints: 420, favoriteItems:['Chicken Burger','Cold Coffee'] },
-  { id:'c2', name:'Omar Hassan', phone:'+966500000002', address:'Jeddah, Saudi Arabia', due: 250, loyaltyPoints: 180, favoriteItems:['Zinger Burger','French Fries'] },
+  { id:'c2', name:'Omar Hassan', phone:'+966500000002', address:'Jeddah, Saudi Arabia', due: 0, loyaltyPoints: 180, favoriteItems:['Zinger Burger','French Fries'] },
   { id:'c3', name:'Lina Ali', phone:'+966500000003', address:'Dammam, Saudi Arabia', due: 0, loyaltyPoints: 560, favoriteItems:['Medium Pizza','Chicken Combo'] }
 ];
 
@@ -98,14 +98,14 @@ export const demoOrders: Order[] = [
     createdAt: '2026-11-05T09:10:00',
     customerName: 'Sara Ahmed',
     items: [
-      { id:'li1', productId:'p1', name:'Chicken Burger', qty:2, unitPrice:180 },
-      { id:'li2', productId:'p6', name:'French Fries', qty:1, unitPrice:120 }
+      { id:'li1', productId:'p1', name:'Chicken Burger', qty:2, unitPrice:18 },
+      { id:'li2', productId:'p6', name:'French Fries', qty:1, unitPrice:12 }
     ],
-    subtotal: 480,
-    tax: 24,
+    subtotal: 48,
+    tax: 7.2,
     discount: 0,
-    total: 504,
-    paid: 504,
+    total: 55.2,
+    paid: 55.2,
     due: 0,
     paymentMethod: 'Cash',
     kitchenNote: 'No onions' 
@@ -118,15 +118,15 @@ export const demoOrders: Order[] = [
     createdAt: '2026-11-05T09:36:00',
     customerName: 'Omar Hassan',
     items: [
-      { id:'li3', productId:'p5', name:'Medium Pizza', qty:1, unitPrice:420 },
+      { id:'li3', productId:'p5', name:'Medium Pizza', qty:1, unitPrice:42 },
       { id:'li4', productId:'p8', name:'Cold Coffee', qty:2, unitPrice:120 }
     ],
-    subtotal: 660,
-    tax: 33,
-    discount: 10,
-    total: 683,
-    paid: 400,
-    due: 283,
+    subtotal: 66,
+    tax: 9.9,
+    discount: 0,
+    total: 75.9,
+    paid: 75.9,
+    due: 0,
     paymentMethod: 'Mada',
     kitchenNote: 'Extra cheese' 
   },
@@ -138,14 +138,14 @@ export const demoOrders: Order[] = [
     createdAt: '2026-11-05T10:08:00',
     customerName: 'Walk-in Guest',
     items: [
-      { id:'li5', productId:'p10', name:'Chicken Combo', qty:1, unitPrice:350 }
+      { id:'li5', productId:'p10', name:'Chicken Combo', qty:1, unitPrice:35 }
     ],
-    subtotal: 350,
-    tax: 17.5,
+    subtotal: 35,
+    tax: 5.25,
     discount: 0,
-    total: 367.5,
-    paid: 0,
-    due: 367.5,
+    total: 40.25,
+    paid: 40.25,
+    due: 0,
     paymentMethod: 'Mada',
     kitchenNote: 'Add spicy sauce' 
   }
