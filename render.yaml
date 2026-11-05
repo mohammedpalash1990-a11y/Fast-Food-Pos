@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: musafir-fast-food-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: build/premium-pos-phase-1
+    buildCommand: npm install && npm run build
+    preDeployCommand: npm run db:migrate
+    startCommand: npm run api:start
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: musafir-fast-food-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        value: https://musafir-fast-food-pos.onrender.com
+      - key: PUBLIC_MENU_BASE_URL
+        value: https://musafir-fast-food-pos.onrender.com/menu
+      - key: SEED_ADMIN_EMAIL
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+    initialDeployHook: npm run db:seed
