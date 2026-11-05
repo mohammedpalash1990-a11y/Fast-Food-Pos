@@ -27,7 +27,6 @@ Seed admin credentials come from `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`. N
 - `GET /api/inventory`, `POST/PATCH /api/inventory`: role-checked ingredient listing/editing.
 - `POST /api/purchases`: transactional supplier invoice, stock receiving, stock movement and initial payment.
 - `GET /api/suppliers`, `POST /api/suppliers/:id/payments`, `GET /api/payables`: supplier balances/payments.
-- `GET /api/receivables`, `POST /api/customers/:id/payments`: customer balances and due collection.
 - `POST /api/orders`: transactional order insertion and recipe stock deduction with stock row locks and negative-stock rejection.
 - `GET /api/menu`, `GET /api/menu/qr`: public menu and generated PNG QR code (requires a public hosted menu URL and branch id).
 - `GET /api/health`: database connectivity.
