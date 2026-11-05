@@ -37,7 +37,6 @@ export interface Customer {
   name: string;
   phone: string;
   address: string;
-  due: number;
   loyaltyPoints: number;
   favoriteItems: string[];
 }
