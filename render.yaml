@@ -6,7 +6,6 @@ services:
     region: frankfurt
     branch: build/premium-pos-phase-1
     buildCommand: npm install && npm run build
-    preDeployCommand: npm run db:migrate
     startCommand: npm run api:start
     healthCheckPath: /api/health
     envVars:
@@ -24,4 +23,4 @@ services:
         sync: false
       - key: SEED_ADMIN_PASSWORD
         sync: false
-    initialDeployHook: npm run db:seed
+    initialDeployHook: npm run db:migrate && npm run db:seed
