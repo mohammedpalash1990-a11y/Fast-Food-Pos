@@ -71,16 +71,16 @@ export const demoProducts: Product[] = [
 ];
 
 export const demoInventory: InventoryItem[] = [
-  { id:'i1', name:'Burger bun', category:'Bakery', stock: 120, unit:'piece', reorderLevel: 30, cost: 18, supplier:'Saudi Bakery Supply', expiry:'2026-12-10', },
-  { id:'i2', name:'Chicken patty', category:'Meat', stock: 86, unit:'piece', reorderLevel: 25, cost: 42, supplier:'Prime Poultry KSA', expiry:'2026-11-12' },
-  { id:'i3', name:'Cheese', category:'Dairy', stock: 54, unit:'slice', reorderLevel: 20, cost: 12, supplier:'Fresh Dairy KSA', expiry:'2026-11-15' },
-  { id:'i4', name:'Lettuce', category:'Vegetable', stock: 18, unit:'g', reorderLevel: 35, cost: 4, supplier:'Green Valley', expiry:'2026-11-11' },
-  { id:'i5', name:'Sauce', category:'Condiments', stock: 67, unit:'g', reorderLevel: 20, cost: 8, supplier:'Sauce Works', expiry:'2026-12-22' },
-  { id:'i6', name:'Pizza dough', category:'Bakery', stock: 48, unit:'base', reorderLevel: 20, cost: 55, supplier:'Saudi Bakery Supply', expiry:'2026-11-10' },
-  { id:'i7', name:'Potato', category:'Vegetable', stock: 110, unit:'g', reorderLevel: 40, cost: 8, supplier:'Farm Market', expiry:'2026-11-13' },
-  { id:'i8', name:'Cooking oil', category:'Oil', stock: 121, unit:'ml', reorderLevel: 30, cost: 14, supplier:'Apex Oils', expiry:'2026-12-25' },
-  { id:'i9', name:'Milk', category:'Dairy', stock: 58, unit:'ml', reorderLevel: 30, cost: 16, supplier:'Fresh Dairy KSA', expiry:'2026-11-09' },
-  { id:'i10', name:'Coca-Cola', category:'Beverage', stock: 44, unit:'can', reorderLevel: 15, cost: 22, supplier:'Cold Drinks Ltd', expiry:'2026-12-29' }
+  { id:'i1', name:'Burger bun', category:'Bakery', stock: 120, trackStock: false, unit:'piece', reorderLevel: 30, cost: 18, supplier:'Saudi Bakery Supply', expiry:'2026-12-10', },
+  { id:'i2', name:'Chicken patty', category:'Meat', stock: 86, trackStock: false, unit:'piece', reorderLevel: 25, cost: 42, supplier:'Prime Poultry KSA', expiry:'2026-11-12' },
+  { id:'i3', name:'Cheese', category:'Dairy', stock: 54, trackStock: false, unit:'slice', reorderLevel: 20, cost: 12, supplier:'Fresh Dairy KSA', expiry:'2026-11-15' },
+  { id:'i4', name:'Lettuce', category:'Vegetable', stock: 18, trackStock: false, unit:'g', reorderLevel: 35, cost: 4, supplier:'Green Valley', expiry:'2026-11-11' },
+  { id:'i5', name:'Sauce', category:'Condiments', stock: 67, trackStock: false, unit:'g', reorderLevel: 20, cost: 8, supplier:'Sauce Works', expiry:'2026-12-22' },
+  { id:'i6', name:'Pizza dough', category:'Bakery', stock: 48, trackStock: false, unit:'base', reorderLevel: 20, cost: 55, supplier:'Saudi Bakery Supply', expiry:'2026-11-10' },
+  { id:'i7', name:'Potato', category:'Vegetable', stock: 110, trackStock: false, unit:'g', reorderLevel: 40, cost: 8, supplier:'Farm Market', expiry:'2026-11-13' },
+  { id:'i8', name:'Cooking oil', category:'Oil', stock: 121, trackStock: false, unit:'ml', reorderLevel: 30, cost: 14, supplier:'Apex Oils', expiry:'2026-12-25' },
+  { id:'i9', name:'Milk', category:'Dairy', stock: 58, trackStock: false, unit:'ml', reorderLevel: 30, cost: 16, supplier:'Fresh Dairy KSA', expiry:'2026-11-09' },
+  { id:'i10', name:'Coca-Cola', category:'Beverage', stock: 44, trackStock: false, unit:'can', reorderLevel: 15, cost: 22, supplier:'Cold Drinks Ltd', expiry:'2026-12-29' }
 ];
 
 export const demoCustomers: Customer[] = [
