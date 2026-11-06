@@ -7,6 +7,28 @@ const targetUrl = process.env.NEON_DATABASE_URL;
 const sourceUrl = process.env.DATABASE_URL;
 const commitLegacyTransfer = process.env.LEGACY_TRANSFER_COMMIT === 'true';
 
+const sameDatabase = (left: string, right: string) => {
+  try {
+    const a = new URL(left);
+    const b = new URL(right);
+    const portA = a.port || '5432';
+    const portB = b.port || '5432';
+    return a.protocol === b.protocol &&
+      a.hostname.toLowerCase() === b.hostname.toLowerCase() &&
+      portA === portB &&
+      decodeURIComponent(a.pathname) === decodeURIComponent(b.pathname);
+  } catch {
+    return left === right;
+  }
+};
+
+if (targetUrl && sourceUrl && sameDatabase(targetUrl, sourceUrl)) {
+  throw new Error('Legacy source and Neon target resolve to the same PostgreSQL database. Transfer and migration stopped to protect the source database.');
+}
+if (commitLegacyTransfer && (!targetUrl || !sourceUrl)) {
+  throw new Error('LEGACY_TRANSFER_COMMIT=true requires separate DATABASE_URL (legacy source) and NEON_DATABASE_URL (destination) values.');
+}
+
 const quote = (value: string) => '"' + value.replace(/"/g, '""') + '"';
 
 const getPrimaryKeyColumns = async (client: import('pg').PoolClient, table: string) => {
