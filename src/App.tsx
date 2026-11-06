@@ -746,15 +746,22 @@ function App() {
     <div className="mb-5">{heading('Daily operations','Staff attendance','Cycle each employee through Present, Absent and On Leave. Changes are saved locally.')}</div>
     <div className="space-y-2">{employees.map(employee=><div key={employee.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white/[.035] p-3"><div><div className="text-sm font-medium text-white">{employee.name}</div><div className="mt-1 text-xs text-slate-500">{employee.role} · {employee.shift}</div></div><div className="flex items-center gap-2"><span className="text-xs text-slate-400">{employee.status}</span><button onClick={()=>updateAttendance(employee)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-200">Change status</button></div></div>)}</div>
   </section>;
-  const recordSalaryAdvance = (employee: Employee) => {
+  const recordSalaryAdvance = async (employee: Employee) => {
     const amount = Number(window.prompt(`Advance amount for ${employee.name} (SAR)`, '0'));
     if (!Number.isFinite(amount) || amount <= 0) { flash('Enter an advance greater than zero.'); return; }
     const note = window.prompt('Advance note (optional)', 'Salary advance') || 'Salary advance';
+    if (apiConnected && apiToken) {
+      try {
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/employees/${encodeURIComponent(employee.id)}/advances`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`}, body:JSON.stringify({amount,note}) });
+        const result = await response.json();
+        if (!response.ok || !result.advance) throw new Error(result.error || 'Advance was not saved.');
+      } catch(error) { flash(error instanceof Error ? error.message : 'Advance was not saved.'); return; }
+    }
     setEmployees(current => current.map(item => item.id === employee.id ? { ...item, advance: item.advance + amount } : item));
     setLogs(current => [{ id: `advance-${Date.now()}`, title: 'Salary advance recorded', detail: `${employee.name} · ${currency(amount)} · ${note}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
-    flash(`Advance recorded for ${employee.name}.`);
+    flash(apiConnected ? `Advance saved to PostgreSQL for ${employee.name}.` : `Advance recorded for ${employee.name}.`);
   };
-  const createPayroll = () => {
+  const createPayroll = async () => {
     if (!employees.length) { flash('Add an employee before creating payroll.'); return; }
     const period = window.prompt('Payroll month (YYYY-MM)', localDate().slice(0, 7)) || '';
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) { flash('Enter a valid payroll month in YYYY-MM format.'); return; }
@@ -769,12 +776,20 @@ function App() {
     if (!Number.isFinite(advanceDeduction) || advanceDeduction < 0 || advanceDeduction > employee.advance || advanceDeduction > employee.salary + bonus) { flash('Advance deduction is outside the allowed amount.'); return; }
     const netSalary = employee.salary + bonus - advanceDeduction;
     const record: PayrollRecord = { id: `payroll-${employee.id}-${period}`, employeeId: employee.id, employeeName: employee.name, period, baseSalary: employee.salary, bonus, advanceDeduction, netSalary, payments: [], createdAt: new Date().toISOString() };
+    if (apiConnected && apiToken) {
+      try {
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/payroll`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`}, body:JSON.stringify({employeeId:employee.id,period,bonus,advanceDeduction}) });
+        const result = await response.json();
+        if (!response.ok || !result.payroll) throw new Error(result.error || 'Payroll could not be created.');
+        record.id = result.payroll.id; record.createdAt = result.payroll.createdAt;
+      } catch(error) { flash(error instanceof Error ? error.message : 'Payroll was not saved.'); return; }
+    }
     setPayroll(current => [record, ...current]);
     if (advanceDeduction > 0) setEmployees(current => current.map(item => item.id === employee.id ? { ...item, advance: item.advance - advanceDeduction } : item));
     setLogs(current => [{ id: `payroll-create-${Date.now()}`, title: 'Payroll created', detail: `${employee.name} · ${period} · Net ${currency(netSalary)} · Advance deduction ${currency(advanceDeduction)}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
     flash(`Payroll created for ${employee.name}.`);
   };
-  const recordPayrollPayment = (record: PayrollRecord) => {
+  const recordPayrollPayment = async (record: PayrollRecord) => {
     const paidSoFar = record.payments.reduce((sum, payment) => sum + payment.amount, 0);
     const remaining = Math.max(0, record.netSalary - paidSoFar);
     if (remaining <= 0) { flash('This payroll is already fully paid.'); return; }
@@ -782,10 +797,18 @@ function App() {
     if (!Number.isFinite(amount) || amount <= 0 || amount > remaining) { flash('Enter a payment amount within the remaining balance.'); return; }
     const method = (window.prompt('Payment method: Cash or Mada', 'Cash') || 'Cash').trim();
     if (!['Cash', 'Mada'].includes(method)) { flash('Payment method must be Cash or Mada.'); return; }
-    const payment: PayrollPayment = { id: `salary-payment-${Date.now()}`, amount, paymentMethod: method as PaymentMethod, date: localDate(), createdAt: new Date().toISOString() };
+    let payment: PayrollPayment = { id: `salary-payment-${Date.now()}`, amount, paymentMethod: method as PaymentMethod, date: localDate(), createdAt: new Date().toISOString() };
+    if (apiConnected && apiToken) {
+      try {
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/payroll/${encodeURIComponent(record.id)}/payments`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`}, body:JSON.stringify({amount,method,date:localDate()}) });
+        const result = await response.json();
+        if (!response.ok || !result.payment) throw new Error(result.error || 'Salary payment was not saved.');
+        payment = {id:result.payment.id,amount:Number(result.payment.amount),paymentMethod:result.payment.paymentMethod,date:result.payment.date,createdAt:result.payment.createdAt};
+      } catch(error) { flash(error instanceof Error ? error.message : 'Salary payment was not saved.'); return; }
+    }
     setPayroll(current => current.map(item => item.id === record.id ? { ...item, payments: [...item.payments, payment] } : item));
     setLogs(current => [{ id: `salary-payment-log-${Date.now()}`, title: 'Salary payment recorded', detail: `${record.employeeName} · ${record.period} · ${currency(amount)} · ${method}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
-    flash('Salary payment saved.');
+    flash(apiConnected ? 'Salary payment saved to PostgreSQL.' : 'Salary payment saved.');
   };
   const payrollView = (): ReactNode => {
     const totalDue = payroll.reduce((sum, item) => sum + Math.max(0, item.netSalary - item.payments.reduce((paid, payment) => paid + payment.amount, 0)), 0);
@@ -794,7 +817,7 @@ function App() {
     const monthRecords = payroll.filter(item => item.period === month);
     return <div className="space-y-4">
       <section className={`${panel} p-5`}>
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Finance & team','Salary & payroll','Create monthly salary records, track advances and record Cash or Mada payments. Data is saved locally on this device.')}<button onClick={createPayroll} className="rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]">Create payroll</button></div>
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Finance & team','Salary & payroll','Create monthly salary records, track advances and record Cash or Mada payments. Connected mode stores team and payroll records in PostgreSQL.')}<button onClick={createPayroll} className="rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]">Create payroll</button></div>
         <div className="mb-5 grid gap-3 sm:grid-cols-3">{[{label:'This month payroll',value:monthRecords.reduce((sum,item)=>sum+item.netSalary,0)},{label:'Salary paid',value:totalPaid},{label:'Salary outstanding',value:totalDue}].map(card=><div key={card.label} className="rounded-xl border border-white/[.06] bg-white/[.025] p-4"><div className="text-xs text-slate-400">{card.label}</div><div className="mt-2 text-xl font-semibold text-white">{currency(card.value)}</div></div>)}</div>
         <div className="mb-5 space-y-2">{employees.map(employee=><div key={employee.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white/[.035] p-3"><div><div className="text-sm font-medium text-white">{employee.name}</div><div className="mt-1 text-xs text-slate-500">Monthly salary {currency(employee.salary)} · Advance outstanding {currency(employee.advance)}</div></div><button onClick={()=>recordSalaryAdvance(employee)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300">Record advance</button></div>)}</div>
         <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-sm"><thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="pb-3">Month</th><th className="pb-3">Employee</th><th className="pb-3 text-right">Net salary</th><th className="pb-3 text-right">Paid</th><th className="pb-3 text-right">Remaining</th><th className="pb-3">Status</th><th className="pb-3"/></tr></thead><tbody>{payroll.slice().sort((a,b)=>b.period.localeCompare(a.period)||a.employeeName.localeCompare(b.employeeName)).map(record=>{const paidAmount=record.payments.reduce((sum,payment)=>sum+payment.amount,0);const remaining=Math.max(0,record.netSalary-paidAmount);return <tr key={record.id} className="border-t border-white/[.06]"><td className="py-3 text-slate-400">{record.period}</td><td className="py-3 font-medium text-white">{record.employeeName}<div className="mt-1 text-[10px] text-slate-500">Base {currency(record.baseSalary)} · Bonus {currency(record.bonus)} · Advance deduction {currency(record.advanceDeduction)}</div></td><td className="py-3 text-right text-white">{currency(record.netSalary)}</td><td className="py-3 text-right text-emerald-300">{currency(paidAmount)}</td><td className="py-3 text-right text-amber-200">{currency(remaining)}</td><td className="py-3"><span className={`rounded-full px-2 py-1 text-[10px] ${remaining===0?'bg-emerald-400/10 text-emerald-300':paidAmount>0?'bg-amber-400/10 text-amber-200':'bg-white/[.06] text-slate-400'}`}>{remaining===0?'Paid':paidAmount>0?'Part-paid':'Unpaid'}</span></td><td className="py-3 text-right">{remaining>0&&<button onClick={()=>recordPayrollPayment(record)} className="rounded-lg border border-[#e7b943]/30 px-2.5 py-1.5 text-xs text-[#e7b943]">Pay salary</button>}</td></tr>})}</tbody></table>{!payroll.length&&<p className="py-10 text-center text-sm text-slate-500">No payroll records. Create a monthly payroll to begin.</p>}</div>
