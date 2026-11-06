@@ -80,7 +80,9 @@ if (targetUrl && sourceUrl && targetUrl !== sourceUrl) {
   console.log('Legacy transfer skipped: source or Neon connection is not configured.');
 }
 
-const sql = await readFile(new URL('../db/migrations/001_initial.sql', import.meta.url), 'utf8');
-await pool.query(sql);
-console.log('Database migration applied.');
+for (const file of ['001_initial.sql', '002_team_payroll.sql']) {
+  const sql = await readFile(new URL('../db/migrations/' + file, import.meta.url), 'utf8');
+  await pool.query(sql);
+  console.log('Database migration applied: ' + file);
+}
 await pool.end();
