@@ -122,6 +122,7 @@ function App() {
           category: item.category || 'General',
           unit: item.unit,
           stock: Number(item.stock),
+          trackStock: Boolean(item.trackStock),
           reorderLevel: Number(item.reorderLevel),
           cost: Number(item.unitCost),
           supplier: item.supplier || '—',
@@ -216,7 +217,7 @@ function App() {
     }));
     const shortages = inventory.filter(item => {
       const required = deductions.get(item.name.trim().toLowerCase()) || 0;
-      return required > item.stock;
+      return item.trackStock && required > item.stock;
     });
     if (shortages.length) {
       flash(`Insufficient stock: ${shortages.map(item => item.name).join(', ')}. Receive stock before checkout.`);
