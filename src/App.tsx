@@ -513,15 +513,29 @@ function App() {
     setLogs(current => [{ id: `purchase-log-${Date.now()}`, title: 'Stock purchase received', detail: `${item.name} · +${quantity} ${item.unit} · ${currency(purchase.total)} · ${supplier.name} · ${paymentStatus}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
     flash(apiConnected ? `Purchase saved to database. ${quantity} ${item.unit} added to inventory.` : `Purchase saved locally. ${quantity} ${item.unit} added to inventory.`);
   };
-  const deletePurchase = (purchase: PurchaseRecord) => {
-    const item = inventory.find(entry => entry.id === purchase.inventoryId);
-    if (!item || item.stock < purchase.quantity) { flash('Cannot reverse this purchase: current stock is lower than the received quantity.'); return; }
-    if (!window.confirm(`Delete purchase of ${purchase.quantity} ${purchase.unit} ${purchase.itemName}?`)) return;
-    setInventory(current => current.map(entry => entry.id === purchase.inventoryId ? { ...entry, stock: Math.max(0, entry.stock - purchase.quantity) } : entry));
-    if (purchase.paymentStatus === 'Credit') setSuppliers(current => current.map(entry => entry.id === purchase.supplierId ? { ...entry, due: Math.max(0, entry.due - purchase.total) } : entry));
+  const deletePurchase = async (purchase: PurchaseRecord) => {
+    if (!window.confirm(`Reverse purchase of ${purchase.quantity} ${purchase.unit} ${purchase.itemName}? Any amount already paid will be recorded as a supplier refund.`)) return;
+    if (apiConnected && apiToken) {
+      try {
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/purchases/${encodeURIComponent(purchase.id)}/reverse`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${apiToken}` }
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Purchase could not be reversed.');
+      } catch (error) {
+        flash(error instanceof Error ? error.message : 'Purchase reversal failed. No local changes were made.');
+        return;
+      }
+    } else {
+      const item = inventory.find(entry => entry.id === purchase.inventoryId);
+      if (!item || item.stock < purchase.quantity) { flash('Cannot reverse this purchase: current stock is lower than the received quantity.'); return; }
+      setInventory(current => current.map(entry => entry.id === purchase.inventoryId ? { ...entry, stock: Math.max(0, entry.stock - purchase.quantity) } : entry));
+      if (purchase.paymentStatus === 'Credit') setSuppliers(current => current.map(entry => entry.id === purchase.supplierId ? { ...entry, due: Math.max(0, entry.due - purchase.total) } : entry));
+    }
     setPurchases(current => current.filter(entry => entry.id !== purchase.id));
     setLogs(current => [{ id: `purchase-delete-${Date.now()}`, title: 'Stock purchase reversed', detail: `${purchase.itemName} · -${purchase.quantity} ${purchase.unit} · ${currency(purchase.total)}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
-    flash('Purchase reversed and stock adjusted.');
+    flash(apiConnected ? 'Purchase reversed in the database; stock and supplier balances updated.' : 'Local purchase reversed and stock adjusted.');
   };
   const purchasesView = (): ReactNode => {
     const today = localDate();
