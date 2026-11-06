@@ -74,13 +74,18 @@ function App() {
     const refreshLiveData = async () => {
       try {
         const headers = { Authorization: `Bearer ${apiToken}` };
-        const [ordersResponse, inventoryResponse] = await Promise.all([
+        const [ordersResponse, inventoryResponse, expensesResponse] = await Promise.all([
           fetch(`${apiBase.replace(/\/$/, '')}/api/orders?limit=150`, { headers }),
-          fetch(`${apiBase.replace(/\/$/, '')}/api/inventory`, { headers })
+          fetch(`${apiBase.replace(/\/$/, '')}/api/inventory`, { headers }),
+          fetch(`${apiBase.replace(/\/$/, '')}/api/expenses`, { headers })
         ]);
-        if (!ordersResponse.ok || !inventoryResponse.ok) return;
-        const [orderData, inventoryData] = await Promise.all([ordersResponse.json(), inventoryResponse.json()]);
-        if (!active || !Array.isArray(orderData.orders) || !Array.isArray(inventoryData.items)) return;
+        if (!ordersResponse.ok || !inventoryResponse.ok || !expensesResponse.ok) return;
+        const [orderData, inventoryData, expenseData] = await Promise.all([ordersResponse.json(), inventoryResponse.json(), expensesResponse.json()]);
+        if (!active || !Array.isArray(orderData.orders) || !Array.isArray(inventoryData.items) || !Array.isArray(expenseData.expenses)) return;
+        setExpenses(expenseData.expenses.map((item: {id:string;date:string;category:string;description:string;amount:string|number;paymentMethod:string;createdAt:string}) => ({
+          id:item.id,date:item.date,category:item.category,description:item.description,amount:Number(item.amount),
+          paymentMethod:item.paymentMethod === 'Mada' ? 'Mada' : 'Cash',createdAt:item.createdAt
+        })));
         const liveOrders: Order[] = orderData.orders.map((saved: {
           id: string; order_number: number | string; order_type: Order['type']; status: string;
           created_at: string; customer_name: string; subtotal: string | number; tax: string | number;
@@ -746,7 +751,7 @@ function App() {
       </section>
     </div>;
   };
-  const addExpense = () => {
+  const addExpense = async () => {
     const categories = ['Rent', 'Utilities', 'Staff welfare', 'Transport', 'Maintenance', 'Packaging', 'Cleaning', 'Marketing', 'Other'];
     const category = window.prompt(`Expense category (\n${categories.join(', ')}\n)`, 'Other');
     if (!category?.trim()) return;
@@ -759,12 +764,27 @@ function App() {
     const date = window.prompt('Expense date (YYYY-MM-DD)', localDate()) || localDate();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T00:00:00`).getTime()) || localDate(new Date(`${date}T00:00:00`)) !== date) { flash('Enter a valid date in YYYY-MM-DD format.'); return; }
     const expense: ExpenseRecord = { id: `expense-${Date.now()}`, date, category: category.trim(), description: description.trim(), amount, paymentMethod: paymentMethod as PaymentMethod, createdAt: new Date().toISOString() };
+    if (apiConnected && apiToken) {
+      try {
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/expenses`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`}, body:JSON.stringify({category:expense.category,description:expense.description,amount:expense.amount,paymentMethod:expense.paymentMethod,date:expense.date}) });
+        const result = await response.json();
+        if (!response.ok || !result.expense) throw new Error(result.error || 'Expense could not be saved to the server.');
+        expense.id = result.expense.id; expense.createdAt = result.expense.createdAt;
+      } catch (error) { flash(error instanceof Error ? error.message : 'Expense was not saved.'); return; }
+    }
     setExpenses(current => [expense, ...current]);
     setLogs(current => [{ id: `expense-log-${Date.now()}`, title: 'Expense recorded', detail: `${expense.category} · ${expense.description} · ${currency(amount)} · ${paymentMethod}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
-    flash('Expense saved on this device.');
+    flash(apiConnected ? 'Expense saved to PostgreSQL.' : 'Expense saved on this device.');
   };
-  const deleteExpense = (expense: ExpenseRecord) => {
+  const deleteExpense = async (expense: ExpenseRecord) => {
     if (!window.confirm(`Delete expense “${expense.description}” for ${currency(expense.amount)}?`)) return;
+    if (apiConnected && apiToken) {
+      try {
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/expenses/${encodeURIComponent(expense.id)}`, { method:'DELETE', headers:{Authorization:`Bearer ${apiToken}`} });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Expense could not be deleted from the server.');
+      } catch (error) { flash(error instanceof Error ? error.message : 'Expense could not be deleted.'); return; }
+    }
     setExpenses(current => current.filter(item => item.id !== expense.id));
     setLogs(current => [{ id: `expense-delete-${Date.now()}`, title: 'Expense deleted', detail: `${expense.description} · ${currency(expense.amount)}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
     flash('Expense deleted.');
@@ -777,7 +797,7 @@ function App() {
     const categoryTotals = expenses.reduce<Record<string, number>>((totals, item) => { totals[item.category] = (totals[item.category] || 0) + item.amount; return totals; }, {});
     return <div className="space-y-4">
       <section className={`${panel} p-5`}>
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Finance control','Operating expenses','Record and review shop expenses in SAR. These records are stored locally on this device.')}<button onClick={addExpense} className="inline-flex items-center gap-2 rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]"><Plus size={15}/> Add expense</button></div>
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Finance control','Operating expenses','Record and review shop expenses in SAR. Connected records are shared through PostgreSQL.')}<button onClick={addExpense} className="inline-flex items-center gap-2 rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]"><Plus size={15}/> Add expense</button></div>
         <div className="mb-5 grid gap-3 sm:grid-cols-3">
           {[{label:'Today',value:todayTotal},{label:'This month',value:monthTotal},{label:'All recorded',value:expenses.reduce((sum,item)=>sum+item.amount,0)}].map(card=><div key={card.label} className="rounded-xl border border-white/[.06] bg-white/[.025] p-4"><div className="text-xs text-slate-400">{card.label}</div><div className="mt-2 text-xl font-semibold text-white">{currency(card.value)}</div></div>)}
         </div>
