@@ -537,16 +537,25 @@ function App() {
     const method = (window.prompt('Payment method: Cash or Mada', 'Cash') || '').trim();
     if (!['Cash', 'Mada'].includes(method)) { flash('Choose Cash or Mada.'); return; }
     const note = (window.prompt('Payment note (optional)') || '').trim();
+    let paymentSaved = false;
     try {
       const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/suppliers/${encodeURIComponent(supplier.id)}/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiToken}` }, body: JSON.stringify({ amount, method, note }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Supplier payment failed.');
+      paymentSaved = true;
+    } catch (error) {
+      flash(error instanceof Error ? error.message : 'Supplier payment failed.');
+      return;
+    }
+    try {
       const refresh = await fetch(`${apiBase.replace(/\/$/, '')}/api/suppliers`, { headers: { Authorization: `Bearer ${apiToken}` } });
       const data = await refresh.json();
-      if (!refresh.ok || !Array.isArray(data.suppliers)) throw new Error(data.error || 'Payment saved, but supplier balances could not refresh. Reconnect to refresh balances.');
+      if (!refresh.ok || !Array.isArray(data.suppliers)) throw new Error(data.error || 'Balance refresh failed.');
       setSuppliers(data.suppliers.map((saved: {id:string;name:string;phone?:string;category?:string;payable:string|number}) => ({ id: saved.id, name: saved.name, phone: saved.phone || '', category: saved.category || 'General', due: Number(saved.payable) })));
       flash(`Supplier payment of ${currency(amount)} recorded by ${method}.`);
-    } catch (error) { flash(error instanceof Error ? error.message : 'Supplier payment failed.'); }
+    } catch {
+      if (paymentSaved) flash('Supplier payment was recorded. Balance refresh failed; reconnect to reload the current balance.');
+    }
   };
   const addPurchase = async () => {
     if (!inventory.length || !suppliers.length) { flash('Add at least one inventory item and supplier first.'); return; }
