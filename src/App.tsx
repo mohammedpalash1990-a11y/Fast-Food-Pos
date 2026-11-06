@@ -32,7 +32,7 @@ function App() {
   const [employees, setEmployees] = useState(() => safeRead('musafir-employees', demoEmployees));
   const [suppliers, setSuppliers] = useState(() => safeRead('musafir-suppliers', demoSuppliers));
   const [expenses, setExpenses] = useState<ExpenseRecord[]>(() => safeRead('musafir-expenses', []));
-  const [purchases, setPurchases] = useState<PurchaseRecord[]>(() => safeRead('musafir-purchases', []));
+  const [purchases, setPurchases] = useState<PurchaseRecord[]>(() => safeRead<PurchaseRecord[]>('musafir-purchases', []).map(item => ({ ...item, paid: Number(item.paid ?? (item.paymentStatus === 'Paid' ? item.total : 0)) })));
   const [payroll, setPayroll] = useState<PayrollRecord[]>(() => safeRead('musafir-payroll', []));
   const [logs, setLogs] = useState(() => safeRead('musafir-audit', demoAuditLogs));
   const [category, setCategory] = useState('All');
@@ -346,7 +346,7 @@ function App() {
       setEmployees(data.employees);
       setSuppliers(data.suppliers);
       setExpenses(Array.isArray(data.expenses) ? data.expenses : []);
-      setPurchases(Array.isArray(data.purchases) ? data.purchases : []);
+      setPurchases(Array.isArray(data.purchases) ? data.purchases.map((item: PurchaseRecord) => ({ ...item, paid: Number(item.paid ?? (item.paymentStatus === 'Paid' ? item.total : 0)) })) : []);
       setPayroll(Array.isArray(data.payroll) ? data.payroll : []);
       setLogs(data.logs);
       setBackupMessage('Backup restored on this device.');
