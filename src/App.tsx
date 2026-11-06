@@ -417,7 +417,7 @@ function App() {
     const item: InventoryItem = { id: `i-${Date.now()}`, name: name.trim(), category, unit, stock, trackStock, reorderLevel: 0, cost: 0, supplier: '—', expiry: '' };
     if (apiToken && apiConnected) {
       try {
-        const response = await fetch(`${apiBase.replace(/\\/$/, '')}/api/inventory`, {
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/inventory`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiToken}` },
           body: JSON.stringify({ sku: `POS-${Date.now()}`, name: item.name, category, unit, stock, trackStock, reorderLevel: 0, unitCost: 0 })
