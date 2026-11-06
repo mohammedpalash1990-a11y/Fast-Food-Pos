@@ -18,7 +18,7 @@ const moduleGroups = [
 const workflow: OrderStatus[] = ['Pending', 'Accepted', 'Preparing', 'Ready', 'Completed'];
 
 type ExpenseRecord = { id: string; date: string; category: string; description: string; amount: number; paymentMethod: PaymentMethod; createdAt: string };
-type PurchaseRecord = { id: string; date: string; supplierId: string; supplierName: string; inventoryId: string; itemName: string; quantity: number; unit: string; unitCost: number; total: number; paymentStatus: 'Paid' | 'Credit'; paymentMethod?: PaymentMethod; createdAt: string };
+type PurchaseRecord = { id: string; date: string; supplierId: string; supplierName: string; inventoryId: string; itemName: string; quantity: number; unit: string; unitCost: number; total: number; paid: number; paymentStatus: 'Paid' | 'Part-paid' | 'Credit'; paymentMethod?: PaymentMethod; createdAt: string };
 type PayrollPayment = { id: string; amount: number; paymentMethod: PaymentMethod; date: string; createdAt: string };
 type PayrollRecord = { id: string; employeeId: string; employeeName: string; period: string; baseSalary: number; bonus: number; advanceDeduction: number; netSalary: number; payments: PayrollPayment[]; createdAt: string };
 
@@ -271,7 +271,7 @@ function App() {
       if (!purchasesResponse.ok || !Array.isArray(purchaseData.purchases)) throw new Error(purchaseData.error || 'Could not load branch purchase history.');
       setInventory(inventoryData.items.map((item: {id:string;name:string;category?:string;unit:string;stock:string|number;trackStock?:boolean;reorderLevel:string|number;unitCost:string|number;supplier?:string;expiresOn?:string|null})=>({id:item.id,name:item.name,category:item.category||'General',unit:item.unit,stock:Number(item.stock),trackStock:Boolean(item.trackStock),reorderLevel:Number(item.reorderLevel),cost:Number(item.unitCost),supplier:item.supplier||'—',expiry:item.expiresOn||''})));
       setSuppliers(supplierData.suppliers.map((supplier: {id:string;name:string;phone?:string;category?:string;payable:string|number})=>({id:supplier.id,name:supplier.name,phone:supplier.phone||'',category:supplier.category||'General',due:Number(supplier.payable)})));
-      setPurchases(purchaseData.purchases.filter((purchase: {ingredient_id?:string;item_name?:string})=>purchase.ingredient_id && purchase.item_name).map((purchase: {id:string;created_at:string;supplier_id:string;supplier_name:string;ingredient_id:string;item_name:string;unit:string;quantity:string|number;unit_cost:string|number;total:string|number;paid:string|number;payment_method:string})=>({id:purchase.id,date:purchase.created_at.slice(0,10),supplierId:purchase.supplier_id,supplierName:purchase.supplier_name,inventoryId:purchase.ingredient_id,itemName:purchase.item_name,quantity:Number(purchase.quantity),unit:purchase.unit,unitCost:Number(purchase.unit_cost),total:Number(purchase.total),paymentStatus:Number(purchase.paid)>=Number(purchase.total)?'Paid':'Credit',paymentMethod:purchase.payment_method as PaymentMethod,createdAt:purchase.created_at})));
+      setPurchases(purchaseData.purchases.filter((purchase: {ingredient_id?:string;item_name?:string})=>purchase.ingredient_id && purchase.item_name).map((purchase: {id:string;created_at:string;supplier_id:string;supplier_name:string;ingredient_id:string;item_name:string;unit:string;quantity:string|number;unit_cost:string|number;total:string|number;paid:string|number;payment_method:string})=>({id:purchase.id,date:purchase.created_at.slice(0,10),supplierId:purchase.supplier_id,supplierName:purchase.supplier_name,inventoryId:purchase.ingredient_id,itemName:purchase.item_name,quantity:Number(purchase.quantity),unit:purchase.unit,unitCost:Number(purchase.unit_cost),total:Number(purchase.total),paid:Number(purchase.paid),paymentStatus:Number(purchase.paid)>=Number(purchase.total)?'Paid':Number(purchase.paid)>0?'Part-paid':'Credit',paymentMethod:purchase.payment_method as PaymentMethod,createdAt:purchase.created_at})));
       setOrders(orderData.orders.map((saved: { id:string; order_number:number|string; order_type:Order['type']; status:string; created_at:string; customer_name:string; subtotal:string|number; tax:string|number; discount:string|number; total:string|number; paid:string|number; payment_method:string; notes?:string; items:Array<{id:string;productId:string|null;name:string;qty:number;unitPrice:string|number}> }) => ({
         id: saved.id,
         number: String(saved.order_number),
@@ -436,6 +436,31 @@ function App() {
     setInventory(current => [item, ...current]);
     flash(`${item.name} added as ${trackStock ? `${stock} ${unit}` : 'Unlimited'}.`);
   };
+  const editInventoryItem = async (item: InventoryItem) => {
+    const name = window.prompt('Stock item name', item.name)?.trim();
+    if (!name) return;
+    const category = window.prompt('Category', item.category);
+    if (category === null) return;
+    const unit = window.prompt('Unit', item.unit);
+    if (!unit?.trim()) return;
+    const reorderLevel = Number(window.prompt('Reorder level', String(item.reorderLevel)));
+    const unitCost = Number(window.prompt('Unit cost (SAR)', String(item.cost)));
+    if (!Number.isFinite(reorderLevel) || reorderLevel < 0 || !Number.isFinite(unitCost) || unitCost < 0) { flash('Enter valid reorder and unit-cost values.'); return; }
+    const changes = { name, category: category.trim() || 'General', unit: unit.trim(), reorderLevel, unitCost };
+    if (apiToken && apiConnected) {
+      try {
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/inventory/${encodeURIComponent(item.id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiToken}` }, body: JSON.stringify(changes) });
+        const result = await response.json();
+        if (!response.ok || !result.item) throw new Error(result.error || 'Inventory item could not be updated.');
+        const saved = result.item;
+        setInventory(current => current.map(entry => entry.id === item.id ? { ...entry, name: saved.name, category: saved.category, unit: saved.unit, stock: Number(saved.stock), trackStock: Boolean(saved.trackStock ?? saved.track_stock), reorderLevel: Number(saved.reorderLevel ?? saved.reorder_level), cost: Number(saved.unitCost ?? saved.unit_cost) } : entry));
+        flash('Inventory item updated in database.');
+        return;
+      } catch (error) { flash(error instanceof Error ? error.message : 'Inventory update failed.'); return; }
+    }
+    setInventory(current => current.map(entry => entry.id === item.id ? { ...entry, ...changes } : entry));
+    flash('Inventory item updated on this device only.');
+  };
   const addStock = async (item: InventoryItem) => { const quantity = Number(window.prompt(`How many ${item.unit} should be added to ${item.name}?`, '10')); if (!Number.isFinite(quantity) || quantity <= 0) return; if(apiToken&&apiConnected){try{const response=await fetch(`${apiBase.replace(/\/$/,'')}/api/inventory/${encodeURIComponent(item.id)}/adjust`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({quantity,note:'Stock received from POS inventory'})});const result=await response.json();if(!response.ok)throw new Error(result.error||'Stock could not be updated.');const saved=result.item;setInventory(current=>current.map(entry=>entry.id===item.id?{...entry,stock:Number(saved.stock),trackStock:Boolean(saved.trackStock??saved.track_stock)}:entry));flash(`${item.name} stock updated in database.`);return;}catch(error){flash(error instanceof Error?error.message:'Stock update failed.');return;}}setInventory(current=>current.map(entry=>entry.id===item.id?{...entry,stock:entry.stock+quantity,trackStock:true}:entry));setLogs(current=>[{id:`stock-${Date.now()}`,title:'Stock received',detail:`${item.name} · +${quantity} ${item.unit} · Offline demo`,time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})},...current]);flash(`${item.name} stock updated in offline demo.`); };
   const addCustomer = () => { const name = window.prompt('Customer name'); if (!name?.trim()) return; const phone = window.prompt('Phone number') || ''; setCustomers(current => [{ id: `c-${Date.now()}`, name: name.trim(), phone, address: '', loyaltyPoints: 0, favoriteItems: [] }, ...current]); setLogs(current => [{ id: `customer-${Date.now()}`, title: 'Customer added', detail: `${name.trim()} · ${phone || 'No phone saved'}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]); flash('Customer added.'); };
 
@@ -514,17 +539,19 @@ function App() {
     const quantity = Number(window.prompt(`Quantity received (${item.unit})`, '1'));
     const unitCost = Number(window.prompt('Unit cost (SAR)', String(item.cost || 0)));
     if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitCost) || unitCost <= 0) { flash('Quantity and unit cost must be greater than zero.'); return; }
-    const paymentStatus = (window.prompt('Payment status: Paid or Credit', 'Paid') || 'Paid').trim();
-    if (!['Paid', 'Credit'].includes(paymentStatus)) { flash('Payment status must be Paid or Credit.'); return; }
+    const total = quantity * unitCost;
+    const paid = Number(window.prompt(`Initial payment amount (SAR, 0–${total.toFixed(2)})`, total.toFixed(2)));
+    if (!Number.isFinite(paid) || paid < 0 || paid > total) { flash('Initial payment must be between zero and the purchase total.'); return; }
+    const paymentStatus: PurchaseRecord['paymentStatus'] = paid >= total ? 'Paid' : paid > 0 ? 'Part-paid' : 'Credit';
     let paymentMethod: PaymentMethod | undefined;
-    if (paymentStatus === 'Paid') {
-      const method = (window.prompt('Payment method: Cash or Mada', 'Cash') || 'Cash').trim();
+    if (paid > 0) {
+      const method = (window.prompt('Payment method: Cash or Mada', 'Cash') || '').trim();
       if (!['Cash', 'Mada'].includes(method)) { flash('Payment method must be Cash or Mada.'); return; }
       paymentMethod = method as PaymentMethod;
     }
     const date = window.prompt('Purchase date (YYYY-MM-DD)', localDate()) || localDate();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T00:00:00`).getTime()) || localDate(new Date(`${date}T00:00:00`)) !== date) { flash('Enter a valid purchase date.'); return; }
-    const purchase: PurchaseRecord = { id: `purchase-${Date.now()}`, date, supplierId: supplier.id, supplierName: supplier.name, inventoryId: item.id, itemName: item.name, quantity, unit: item.unit, unitCost, total: quantity * unitCost, paymentStatus: paymentStatus as 'Paid' | 'Credit', paymentMethod, createdAt: new Date().toISOString() };
+    const purchase: PurchaseRecord = { id: `purchase-${Date.now()}`, date, supplierId: supplier.id, supplierName: supplier.name, inventoryId: item.id, itemName: item.name, quantity, unit: item.unit, unitCost, total, paid, paymentStatus, paymentMethod, createdAt: new Date().toISOString() };
     if (apiConnected && apiToken) {
       try {
         const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/purchases`, {
@@ -533,7 +560,7 @@ function App() {
           body: JSON.stringify({
             supplierId: supplier.id,
             invoiceNumber: `POS-${Date.now()}`,
-            paid: paymentStatus === 'Paid' ? purchase.total : 0,
+            paid: purchase.paid,
             paymentMethod: paymentMethod || 'Cash',
             items: [{ ingredientId: item.id, quantity, unitCost }]
           })
@@ -547,7 +574,7 @@ function App() {
       }
     }
     setInventory(current => current.map(entry => entry.id === item.id ? { ...entry, stock: entry.stock + quantity, trackStock: true, cost: unitCost, supplier: supplier.name } : entry));
-    if (paymentStatus === 'Credit') setSuppliers(current => current.map(entry => entry.id === supplier.id ? { ...entry, due: entry.due + purchase.total } : entry));
+    if (purchase.total > purchase.paid) setSuppliers(current => current.map(entry => entry.id === supplier.id ? { ...entry, due: entry.due + purchase.total - purchase.paid } : entry));
     setPurchases(current => [purchase, ...current]);
     setLogs(current => [{ id: `purchase-log-${Date.now()}`, title: 'Stock purchase received', detail: `${item.name} · +${quantity} ${item.unit} · ${currency(purchase.total)} · ${supplier.name} · ${paymentStatus}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
     flash(apiConnected ? `Purchase saved to database. ${quantity} ${item.unit} added to inventory.` : `Purchase saved locally. ${quantity} ${item.unit} added to inventory.`);
@@ -575,7 +602,7 @@ function App() {
       const item = inventory.find(entry => entry.id === purchase.inventoryId);
       if (!item || item.stock < purchase.quantity) { flash('Cannot reverse this purchase: current stock is lower than the received quantity.'); return; }
       setInventory(current => current.map(entry => entry.id === purchase.inventoryId ? { ...entry, stock: Math.max(0, entry.stock - purchase.quantity) } : entry));
-      if (purchase.paymentStatus === 'Credit') setSuppliers(current => current.map(entry => entry.id === purchase.supplierId ? { ...entry, due: Math.max(0, entry.due - purchase.total) } : entry));
+      if (purchase.total > purchase.paid) setSuppliers(current => current.map(entry => entry.id === purchase.supplierId ? { ...entry, due: Math.max(0, entry.due - (purchase.total - purchase.paid)) } : entry));
     }
     setPurchases(current => current.filter(entry => entry.id !== purchase.id));
     setLogs(current => [{ id: `purchase-delete-${Date.now()}`, title: 'Stock purchase reversed', detail: `${purchase.itemName} · -${purchase.quantity} ${purchase.unit} · ${currency(purchase.total)}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
@@ -586,11 +613,11 @@ function App() {
     const month = today.slice(0, 7);
     const todayTotal = purchases.filter(item => item.date === today).reduce((sum, item) => sum + item.total, 0);
     const monthTotal = purchases.filter(item => item.date.startsWith(month)).reduce((sum, item) => sum + item.total, 0);
-    const creditTotal = purchases.filter(item => item.paymentStatus === 'Credit').reduce((sum, item) => sum + item.total, 0);
+    const creditTotal = purchases.reduce((sum, item) => sum + Math.max(0, item.total - item.paid), 0);
     return <section className={`${panel} p-5`}>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Stock procurement','Purchase management','Record received goods, update inventory and track supplier credit. Connected records sync with the branch database.')}<button onClick={addPurchase} className="inline-flex items-center gap-2 rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]"><Plus size={15}/> Record purchase</button></div>
       <div className="mb-5 grid gap-3 sm:grid-cols-3">{[{label:'Today',value:todayTotal},{label:'This month',value:monthTotal},{label:'Recorded credit',value:creditTotal}].map(card=><div key={card.label} className="rounded-xl border border-white/[.06] bg-white/[.025] p-4"><div className="text-xs text-slate-400">{card.label}</div><div className="mt-2 text-xl font-semibold text-white">{currency(card.value)}</div></div>)}</div>
-      <div className="overflow-x-auto"><table className="w-full min-w-[850px] text-left text-sm"><thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="pb-3">Date</th><th className="pb-3">Item</th><th className="pb-3">Supplier</th><th className="pb-3">Quantity</th><th className="pb-3">Unit cost</th><th className="pb-3">Total</th><th className="pb-3">Payment</th><th className="pb-3"/></tr></thead><tbody>{purchases.slice().sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt)).map(item=><tr key={item.id} className="border-t border-white/[.06]"><td className="py-3 text-slate-400">{item.date}</td><td className="py-3 font-medium text-white">{item.itemName}</td><td className="py-3 text-slate-400">{item.supplierName}</td><td className="py-3 text-slate-300">{item.quantity} {item.unit}</td><td className="py-3 text-slate-400">{currency(item.unitCost)}</td><td className="py-3 font-semibold text-white">{currency(item.total)}</td><td className="py-3 text-slate-400">{item.paymentStatus}{item.paymentMethod ? ` · ${item.paymentMethod}` : ''}</td><td className="py-3 text-right"><button onClick={()=>deletePurchase(item)} className="rounded-lg border border-rose-400/15 px-2.5 py-1.5 text-xs text-rose-300">Reverse</button></td></tr>)}</tbody></table>{!purchases.length&&<p className="py-10 text-center text-sm text-slate-500">No purchases recorded yet. Record a purchase to receive stock.</p>}</div>
+      <div className="overflow-x-auto"><table className="w-full min-w-[850px] text-left text-sm"><thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="pb-3">Date</th><th className="pb-3">Item</th><th className="pb-3">Supplier</th><th className="pb-3">Quantity</th><th className="pb-3">Unit cost</th><th className="pb-3">Total</th><th className="pb-3">Payment</th><th className="pb-3"/></tr></thead><tbody>{purchases.slice().sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt)).map(item=><tr key={item.id} className="border-t border-white/[.06]"><td className="py-3 text-slate-400">{item.date}</td><td className="py-3 font-medium text-white">{item.itemName}</td><td className="py-3 text-slate-400">{item.supplierName}</td><td className="py-3 text-slate-300">{item.quantity} {item.unit}</td><td className="py-3 text-slate-400">{currency(item.unitCost)}</td><td className="py-3 font-semibold text-white">{currency(item.total)}</td><td className="py-3 text-slate-400">{item.paymentStatus}{item.paymentMethod ? ` · ${item.paymentMethod}` : ''} · Due ${currency(Math.max(0,item.total-item.paid))}</td><td className="py-3 text-right"><button onClick={()=>deletePurchase(item)} className="rounded-lg border border-rose-400/15 px-2.5 py-1.5 text-xs text-rose-300">Reverse</button></td></tr>)}</tbody></table>{!purchases.length&&<p className="py-10 text-center text-sm text-slate-500">No purchases recorded yet. Record a purchase to receive stock.</p>}</div>
     </section>;
   };
   const addEmployee = () => {
