@@ -46,7 +46,7 @@ app.patch('/api/suppliers/:id',authenticate,allow('owner','manager','inventory',
     const duplicate=await client.query("SELECT id FROM suppliers WHERE organization_id=$1 AND id<>$2 AND lower(name)=lower($3) AND COALESCE(phone,'')=$4 LIMIT 1",[req.user!.organizationId,String(req.params.id),name,phone]);
     if(duplicate.rowCount)throw Object.assign(new Error('A supplier with this name and phone already exists'),{status:409});
     const updated=await client.query(`UPDATE suppliers SET name=$3,phone=$4,category=$5 WHERE id=$1 AND organization_id=$2 RETURNING id,name,phone,category`,[String(req.params.id),req.user!.organizationId,name,phone,d.category??current.rows[0].category]);
-    const balance=await client.query("SELECT COALESCE(SUM(total-paid),0) AS payable FROM purchases WHERE supplier_id=$1 AND branch_id=$2 AND status='received'",[String(req.params.id),req.user!.branchId]);
+    const balance=await client.query("SELECT COALESCE(SUM(total-paid),0) AS payable FROM purchases WHERE supplier_id=$1 AND status='received'",[String(req.params.id)]);
     const result={...updated.rows[0],payable:balance.rows[0].payable};
     await audit(client,req.user!,'supplier.updated','supplier',String(req.params.id),{name,phone,category:result.category});
     return result;
