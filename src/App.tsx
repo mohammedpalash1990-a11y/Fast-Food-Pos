@@ -256,7 +256,7 @@ function App() {
       const branchId = login.user?.branchId;
       if (!login.token || !branchId) throw new Error('Login response did not include a branch session.');
       const authHeaders = { Authorization: `Bearer ${login.token}` };
-      const [menuResponse, ordersResponse, inventoryResponse, suppliersResponse] = await Promise.all([
+      const [menuResponse, ordersResponse, inventoryResponse, suppliersResponse, purchasesResponse] = await Promise.all([
         fetch(`${base}/api/menu?branchId=${encodeURIComponent(branchId)}`),
         fetch(`${base}/api/orders?limit=150`, { headers: authHeaders }),
         fetch(`${base}/api/inventory`, { headers: authHeaders }),
