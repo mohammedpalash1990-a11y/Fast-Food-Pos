@@ -6,35 +6,800 @@ import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import QRCode from 'qrcode';
-import { z } from 'zod';
-import { pool, inTransaction } from './db.js';
+import { db, ensureSeeded, inTransaction } from './db.js';
+import type {
+  AttendanceRecord,
+  AuthUser,
+  Coupon,
+  Customer,
+  DiningTable,
+  Employee,
+  Expense,
+  InventoryItem,
+  LogEntry,
+  Order,
+  PaymentEntry,
+  PayrollRecord,
+  Product,
+  Purchase,
+  Reservation,
+  RestaurantSettings,
+  Role,
+  StockMovement,
+  Supplier
+} from '../src/types.js';
 
-type Role = 'owner'|'manager'|'cashier'|'kitchen'|'inventory'|'accountant'|'delivery';
-type AuthUser = { id:string; organizationId:string; branchId:string; email:string; displayName:string; role:Role };
-type AuthedRequest = Request & { user?:AuthUser };
-const app=express();
-app.use(helmet()); app.use(cors({origin:(process.env.CORS_ORIGIN||'http://localhost:5173').split(',').map(s=>s.trim()),credentials:true})); app.use(express.json({limit:'1mb'}));
-const authLimiter=rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:true,legacyHeaders:false});
-const secret=process.env.JWT_SECRET; if(!secret||secret.length<32) throw new Error('JWT_SECRET must be set to at least 32 characters');
-const schema={login:z.object({email:z.string().email().max(254),password:z.string().min(1).max(128)}),inventory:z.object({name:z.string().trim().min(1).max(120),sku:z.string().trim().min(1).max(40),category:z.string().max(80),unit:z.string().min(1).max(24),stock:z.number().min(0),reorderLevel:z.number().min(0),unitCost:z.number().min(0),supplierId:z.string().uuid().optional().nullable(),expiresOn:z.string().optional().nullable()}),purchase:z.object({supplierId:z.string().uuid(),invoiceNumber:z.string().trim().min(1).max(80),paid:z.number().min(0),items:z.array(z.object({ingredientId:z.string().uuid(),quantity:z.number().positive(),unitCost:z.number().min(0)})).min(1)}),payment:z.object({amount:z.number().positive(),method:z.enum(['Cash','Card','Digital','Bank transfer']),note:z.string().max(500).optional()}),order:z.object({orderType:z.enum(['Dine-in','Takeaway','Pickup','Home Delivery']),customerId:z.string().uuid().optional().nullable(),discount:z.number().min(0).default(0),taxRate:z.number().min(0).max(1).default(.05),notes:z.string().max(1000).optional(),items:z.array(z.object({productId:z.string().uuid(),quantity:z.number().int().positive().max(99)})).min(1)})};
-const allow=(...roles:Role[])=> (req:AuthedRequest,res:Response,next:NextFunction)=>{if(!req.user)return res.status(401).json({error:'Authentication required'}); if(!roles.includes(req.user.role))return res.status(403).json({error:'Insufficient permission'}); next();};
-const authenticate=async(req:AuthedRequest,res:Response,next:NextFunction)=>{try{const token=req.headers.authorization?.replace(/^Bearer\s+/i,''); if(!token)return res.status(401).json({error:'Authentication required'}); const claims=jwt.verify(token,secret!) as jwt.JwtPayload; const result=await pool.query('SELECT id,organization_id,branch_id,email,display_name,role FROM users WHERE id=$1 AND active=true',[claims.sub]); if(!result.rowCount)return res.status(401).json({error:'Session is no longer valid'}); const row=result.rows[0]; req.user={id:row.id,organizationId:row.organization_id,branchId:row.branch_id,email:row.email,displayName:row.display_name,role:row.role}; next();}catch{return res.status(401).json({error:'Invalid or expired session'});}};
-const asyncRoute=(fn:(req:AuthedRequest,res:Response)=>Promise<unknown>)=>(req:AuthedRequest,res:Response,next:NextFunction)=>{void fn(req,res).catch(next);};
-const audit=async(client:import('pg').PoolClient,user:AuthUser,action:string,entity:string,id:string|null,details:unknown={})=>client.query('INSERT INTO audit_logs(organization_id,branch_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,$3,$4,$5,$6,$7)',[user.organizationId,user.branchId,user.id,action,entity,id,JSON.stringify(details)]);
-app.get('/api/health',asyncRoute(async(_req,res)=>{await pool.query('SELECT 1');res.json({status:'ok',database:'connected'});}));
-app.post('/api/auth/login',authLimiter,asyncRoute(async(req,res)=>{const parsed=schema.login.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Enter a valid email and password'});const result=await pool.query('SELECT id,organization_id,branch_id,email,display_name,role,password_hash FROM users WHERE email=$1 AND active=true',[parsed.data.email.toLowerCase()]);const user=result.rows[0];if(!user||!await bcrypt.compare(parsed.data.password,user.password_hash))return res.status(401).json({error:'Email or password is incorrect'});const token=jwt.sign({sub:user.id},secret!,{expiresIn:'8h',issuer:'musafir-pos'});res.json({token,user:{id:user.id,email:user.email,displayName:user.display_name,role:user.role,organizationId:user.organization_id,branchId:user.branch_id}});}));
-app.get('/api/auth/me',authenticate,asyncRoute(async(req:AuthedRequest,res)=>res.json({user:req.user})));
-app.get('/api/menu',asyncRoute(async(req,res)=>{const branchId=String(req.query.branchId||'');if(!branchId)return res.status(400).json({error:'branchId is required'});const result=await pool.query('SELECT p.id,p.name,p.sku,p.price,p.image_url,c.name AS category FROM products p LEFT JOIN categories c ON c.id=p.category_id JOIN branches b ON b.organization_id=p.organization_id WHERE p.active=true AND b.id=$1 ORDER BY c.name,p.name',[branchId]);res.json({products:result.rows});}));
-app.get('/api/menu/qr',asyncRoute(async(req,res)=>{const branchId=String(req.query.branchId||'');const branch=await pool.query('SELECT id,code FROM branches WHERE id=$1',[branchId]);if(!branch.rowCount)return res.status(404).json({error:'Branch not found'});const base=(process.env.PUBLIC_MENU_BASE_URL||'http://localhost:5173/menu').replace(/\/$/,'');const url=`${base}?branch=${encodeURIComponent(branch.rows[0].id)}&table=${encodeURIComponent(String(req.query.table||''))}`;const png=await QRCode.toBuffer(url,{type:'png',width:512,margin:2,errorCorrectionLevel:'M',color:{dark:'#161616',light:'#ffffff'}});res.type('png').set('Cache-Control','no-store').send(png);}));
-app.get('/api/inventory',authenticate,asyncRoute(async(req:AuthedRequest,res)=>{const rows=await pool.query('SELECT i.id,i.sku,i.name,i.category,i.unit,i.stock,i.reorder_level AS "reorderLevel",i.unit_cost AS "unitCost",i.expires_on AS "expiresOn",s.name AS supplier FROM ingredients i LEFT JOIN suppliers s ON s.id=i.supplier_id WHERE i.branch_id=$1 ORDER BY i.name',[req.user!.branchId]);res.json({items:rows.rows});}));
-app.post('/api/inventory',authenticate,allow('owner','manager','inventory'),asyncRoute(async(req:AuthedRequest,res)=>{const input=schema.inventory.safeParse(req.body);if(!input.success)return res.status(400).json({error:'Invalid ingredient data',details:input.error.flatten()});const d=input.data;const inserted=await inTransaction(async client=>{const r=await client.query('INSERT INTO ingredients(organization_id,branch_id,sku,name,category,unit,stock,reorder_level,unit_cost,supplier_id,expires_on) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',[req.user!.organizationId,req.user!.branchId,d.sku,d.name,d.category,d.unit,d.stock,d.reorderLevel,d.unitCost,d.supplierId||null,d.expiresOn||null]);await audit(client,req.user!,'ingredient.created','ingredient',r.rows[0].id,d);return r.rows[0];});res.status(201).json({item:inserted});}));
-app.patch('/api/inventory/:id',authenticate,allow('owner','manager','inventory'),asyncRoute(async(req:AuthedRequest,res)=>{const input=schema.inventory.partial().safeParse(req.body);if(!input.success)return res.status(400).json({error:'Invalid ingredient data'});const d=input.data;const result=await pool.query(`UPDATE ingredients SET name=COALESCE($3,name),sku=COALESCE($4,sku),category=COALESCE($5,category),unit=COALESCE($6,unit),stock=COALESCE($7,stock),reorder_level=COALESCE($8,reorder_level),unit_cost=COALESCE($9,unit_cost),supplier_id=COALESCE($10,supplier_id),expires_on=COALESCE($11,expires_on),updated_at=now() WHERE id=$1 AND branch_id=$2 RETURNING *`,[req.params.id,req.user!.branchId,d.name,d.sku,d.category,d.unit,d.stock,d.reorderLevel,d.unitCost,d.supplierId,d.expiresOn]);if(!result.rowCount)return res.status(404).json({error:'Ingredient not found'});await pool.query('INSERT INTO audit_logs(organization_id,branch_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,$3,$4,$5,$6,$7)',[req.user!.organizationId,req.user!.branchId,req.user!.id,'ingredient.updated','ingredient',req.params.id,JSON.stringify(d)]);res.json({item:result.rows[0]});}));
-app.get('/api/suppliers',authenticate,asyncRoute(async(req:AuthedRequest,res)=>{const rows=await pool.query(`SELECT s.id,s.name,s.phone,s.category,COALESCE((SELECT SUM(p.total-p.paid) FROM purchases p WHERE p.supplier_id=s.id AND p.status='received'),0) AS payable FROM suppliers s WHERE s.organization_id=$1 ORDER BY s.name`,[req.user!.organizationId]);res.json({suppliers:rows.rows});}));
-app.post('/api/purchases',authenticate,allow('owner','manager','inventory','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{const parsed=schema.purchase.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid purchase',details:parsed.error.flatten()});const d=parsed.data;const total=d.items.reduce((sum,item)=>sum+item.quantity*item.unitCost,0);if(d.paid>total)return res.status(400).json({error:'Paid amount cannot exceed purchase total'});const purchase=await inTransaction(async client=>{const supplier=await client.query('SELECT id FROM suppliers WHERE id=$1 AND organization_id=$2',[d.supplierId,req.user!.organizationId]);if(!supplier.rowCount)throw Object.assign(new Error('Supplier not found'),{status:404});const p=await client.query('INSERT INTO purchases(organization_id,branch_id,supplier_id,invoice_number,total,paid,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *',[req.user!.organizationId,req.user!.branchId,d.supplierId,d.invoiceNumber,total,d.paid,req.user!.id]);for(const item of d.items){const ing=await client.query('UPDATE ingredients SET stock=stock+$1,unit_cost=$2,updated_at=now() WHERE id=$3 AND branch_id=$4 RETURNING id',[item.quantity,item.unitCost,item.ingredientId,req.user!.branchId]);if(!ing.rowCount)throw Object.assign(new Error('Ingredient not found in this branch'),{status:404});await client.query('INSERT INTO purchase_items(purchase_id,ingredient_id,quantity,unit_cost,line_total) VALUES($1,$2,$3,$4,$5)',[p.rows[0].id,item.ingredientId,item.quantity,item.unitCost,item.quantity*item.unitCost]);await client.query("INSERT INTO stock_movements(branch_id,ingredient_id,movement_type,quantity_delta,reference_id,created_by) VALUES($1,$2,'purchase',$3,$4,$5)",[req.user!.branchId,item.ingredientId,item.quantity,p.rows[0].id,req.user!.id]);}if(d.paid>0)await client.query("INSERT INTO payments(organization_id,branch_id,supplier_id,amount,method,direction,note,created_by) VALUES($1,$2,$3,$4,'Bank transfer','out',$5,$6)",[req.user!.organizationId,req.user!.branchId,d.supplierId,d.paid,`Initial payment for invoice ${d.invoiceNumber}`,req.user!.id]);await audit(client,req.user!,'purchase.received','purchase',p.rows[0].id,{invoiceNumber:d.invoiceNumber,total,paid:d.paid});return p.rows[0];});res.status(201).json({purchase});}));
-app.post('/api/suppliers/:id/payments',authenticate,allow('owner','manager','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{const parsed=schema.payment.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid payment'});const supplier=await pool.query('SELECT id FROM suppliers WHERE id=$1 AND organization_id=$2',[req.params.id,req.user!.organizationId]);if(!supplier.rowCount)return res.status(404).json({error:'Supplier not found'});const balance=await pool.query("SELECT COALESCE(SUM(total-paid),0) AS due FROM purchases WHERE supplier_id=$1 AND status='received'",[req.params.id]);if(parsed.data.amount>Number(balance.rows[0].due))return res.status(400).json({error:'Payment exceeds supplier balance'});const payment=await inTransaction(async client=>{let remaining=parsed.data.amount;const invoices=await client.query("SELECT id,total,paid FROM purchases WHERE supplier_id=$1 AND status='received' AND paid<total ORDER BY created_at FOR UPDATE",[req.params.id]);for(const invoice of invoices.rows){if(remaining<=0)break;const due=Number(invoice.total)-Number(invoice.paid);const amount=Math.min(remaining,due);await client.query('UPDATE purchases SET paid=paid+$1 WHERE id=$2',[amount,invoice.id]);remaining-=amount;}const r=await client.query("INSERT INTO payments(organization_id,branch_id,supplier_id,amount,method,direction,note,created_by) VALUES($1,$2,$3,$4,$5,'out',$6,$7) RETURNING *",[req.user!.organizationId,req.user!.branchId,req.params.id,parsed.data.amount,parsed.data.method,parsed.data.note||'',req.user!.id]);await audit(client,req.user!,'supplier.payment','payment',r.rows[0].id,{amount:parsed.data.amount});return r.rows[0];});res.status(201).json({payment});}));
-app.post('/api/customers/:id/payments',authenticate,allow('owner','manager','cashier','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{const parsed=schema.payment.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid payment'});const customer=await pool.query('SELECT id FROM customers WHERE id=$1 AND organization_id=$2',[req.params.id,req.user!.organizationId]);if(!customer.rowCount)return res.status(404).json({error:'Customer not found'});const orders=await pool.query("SELECT o.id,o.total,COALESCE(SUM(p.amount),0) AS paid FROM orders o LEFT JOIN payments p ON p.order_id=o.id AND p.direction='in' WHERE o.customer_id=$1 AND o.status<>'Cancelled' GROUP BY o.id,o.total HAVING o.total>COALESCE(SUM(p.amount),0) ORDER BY o.created_at FOR UPDATE",[req.params.id]);const outstanding=orders.rows.reduce((sum,row)=>sum+Number(row.total)-Number(row.paid),0);if(parsed.data.amount>outstanding)return res.status(400).json({error:'Payment exceeds customer outstanding balance'});const payment=await inTransaction(async client=>{let remaining=parsed.data.amount;for(const order of orders.rows){if(remaining<=0)break;const amount=Math.min(remaining,Number(order.total)-Number(order.paid));await client.query("INSERT INTO payments(organization_id,branch_id,order_id,customer_id,amount,method,direction,note,created_by) VALUES($1,$2,$3,$4,$5,$6,'in',$7,$8)",[req.user!.organizationId,req.user!.branchId,order.id,req.params.id,amount,parsed.data.method,parsed.data.note||'Due collection',req.user!.id]);remaining-=amount;}await audit(client,req.user!,'customer.payment','customer',req.params.id,{amount:parsed.data.amount});return {amount:parsed.data.amount};});res.status(201).json({payment});}));
-app.post('/api/orders',authenticate,allow('owner','manager','cashier'),asyncRoute(async(req:AuthedRequest,res)=>{const parsed=schema.order.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid order',details:parsed.error.flatten()});const d=parsed.data;const order=await inTransaction(async client=>{const items=await client.query('SELECT p.id,p.name,p.price,r.ingredient_id,r.quantity,i.name AS ingredient_name,i.stock FROM products p JOIN recipes r ON r.product_id=p.id JOIN ingredients i ON i.id=r.ingredient_id WHERE p.organization_id=$1 AND p.active AND p.id=ANY($2::uuid[]) AND i.branch_id=$3 FOR UPDATE OF i',[req.user!.organizationId,d.items.map(i=>i.productId),req.user!.branchId]);const byProduct=new Map<string,typeof items.rows>();for(const row of items.rows){const key=String(row.id);byProduct.set(key,[...(byProduct.get(key)||[]),row]);}let subtotal=0;const cooked=d.items.map(line=>{const recipe=byProduct.get(line.productId);if(!recipe?.length)throw Object.assign(new Error('Product or recipe is unavailable'),{status:400});const product=recipe[0];subtotal+=Number(product.price)*line.quantity;return {line,recipe,product};});const requirements=new Map<string,{name:string;qty:number;stock:number}>();for(const {line,recipe} of cooked)for(const ing of recipe){const key=String(ing.ingredient_id);const prior=requirements.get(key);requirements.set(key,{name:ing.ingredient_name,qty:(prior?.qty||0)+Number(ing.quantity)*line.quantity,stock:Number(ing.stock)});}for(const [id,need] of requirements)if(need.qty>need.stock)throw Object.assign(new Error(`Insufficient stock: ${need.name}`),{status:409});const tax=subtotal*d.taxRate;const discount=Math.min(d.discount,subtotal+tax);const total=Math.max(0,subtotal+tax-discount);const numberResult=await client.query('SELECT COALESCE(MAX(order_number),1000)+1 AS next FROM orders WHERE branch_id=$1',[req.user!.branchId]);const created=await client.query("INSERT INTO orders(organization_id,branch_id,customer_id,order_number,order_type,subtotal,tax,discount,total,notes,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *",[req.user!.organizationId,req.user!.branchId,d.customerId||null,numberResult.rows[0].next,d.orderType,subtotal,tax,discount,total,d.notes||'',req.user!.id]);for(const {line,recipe,product} of cooked){await client.query('INSERT INTO order_items(order_id,product_id,product_name,quantity,unit_price,line_total) VALUES($1,$2,$3,$4,$5,$6)',[created.rows[0].id,product.id,product.name,line.quantity,product.price,Number(product.price)*line.quantity]);for(const ing of recipe)await client.query('UPDATE ingredients SET stock=stock-$1,updated_at=now() WHERE id=$2',[Number(ing.quantity)*line.quantity,ing.ingredient_id]);}await audit(client,req.user!,'order.created','order',created.rows[0].id,{orderNumber:numberResult.rows[0].next,total});return created.rows[0];});res.status(201).json({order});}));
-app.get('/api/receivables',authenticate,allow('owner','manager','cashier','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{const rows=await pool.query("SELECT c.id,c.name,c.phone,COALESCE(SUM(o.total),0)-COALESCE(SUM(pay.amount),0) AS due FROM customers c JOIN orders o ON o.customer_id=c.id AND o.branch_id=$1 AND o.status<>'Cancelled' LEFT JOIN payments pay ON pay.order_id=o.id AND pay.direction='in' WHERE c.organization_id=$2 GROUP BY c.id HAVING COALESCE(SUM(o.total),0)>COALESCE(SUM(pay.amount),0) ORDER BY due DESC",[req.user!.branchId,req.user!.organizationId]);res.json({receivables:rows.rows});}));
-app.get('/api/payables',authenticate,allow('owner','manager','inventory','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{const rows=await pool.query("SELECT s.id,s.name,s.phone,COALESCE(SUM(p.total-p.paid),0) AS due FROM suppliers s JOIN purchases p ON p.supplier_id=s.id AND p.branch_id=$1 AND p.status='received' WHERE s.organization_id=$2 GROUP BY s.id HAVING SUM(p.total-p.paid)>0 ORDER BY due DESC",[req.user!.branchId,req.user!.organizationId]);res.json({payables:rows.rows}));
-app.use((error:Error&{status?:number},_req:Request,res:Response,_next:NextFunction)=>{console.error(error);res.status(error.status||500).json({error:error.status?error.message:'Internal server error'});});
-const port=Number(process.env.PORT||3001);app.listen(port,()=>console.log(`Musafir API listening on ${port}`));
+ensureSeeded();
+
+type AuthedRequest = Request & { user?: AuthUser };
+
+const app = express();
+app.use(helmet({ crossOriginResourcePolicy: false, contentSecurityPolicy: false }));
+app.use(cors({ origin: true, credentials: true }));
+app.use(express.json({ limit: '5mb' }));
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 40,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const secret = process.env.JWT_SECRET && process.env.JWT_SECRET.length >= 32
+  ? process.env.JWT_SECRET
+  : 'musafir-fast-food-pos-jwt-secret-key-2026-default';
+
+function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
+  try {
+    const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+    if (!token) return res.status(401).json({ error: 'Sign in required' });
+    const claims = jwt.verify(token, secret) as jwt.JwtPayload;
+    const row = db.prepare('SELECT id, email, display_name, role FROM users WHERE id = ? AND active = 1').get(String(claims.sub)) as Record<string, unknown> | undefined;
+    if (!row) return res.status(401).json({ error: 'Session is no longer valid' });
+    req.user = {
+      id: String(row.id),
+      email: String(row.email),
+      displayName: String(row.display_name),
+      role: row.role as Role
+    };
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired session' });
+  }
+}
+
+function appendAuditLog(title: string, detail: string, actor = 'Admin'): void {
+  const id = `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO audit_logs (id, title, detail, actor, time, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, title, detail, actor, time, now);
+}
+
+function readAllState() {
+  const settingsRow = db.prepare('SELECT * FROM settings WHERE id = 1').get() as Record<string, unknown> | undefined;
+  const settings: RestaurantSettings = settingsRow
+    ? {
+        restaurantName: String(settingsRow.restaurant_name),
+        branchName: String(settingsRow.branch_name),
+        branchCode: String(settingsRow.branch_code),
+        phone: String(settingsRow.phone),
+        address: String(settingsRow.address),
+        currency: String(settingsRow.currency),
+        taxRate: Number(settingsRow.tax_rate),
+        receiptFooter: String(settingsRow.receipt_footer),
+        publicMenuUrl: String(settingsRow.public_menu_url)
+      }
+    : {
+        restaurantName: 'Musafir Fast Food',
+        branchName: 'Dhaka Main Branch',
+        branchCode: 'DHK-01',
+        phone: '+880 1711-009988',
+        address: 'House 24, Road 11, Banani, Dhaka 1213',
+        currency: '৳',
+        taxRate: 5,
+        receiptFooter: 'Thank you for dining with Musafir Fast Food!',
+        publicMenuUrl: 'https://musafir-pos.local/menu'
+      };
+
+  const categoryRows = db.prepare('SELECT * FROM categories ORDER BY sort_order, name').all() as Record<string, unknown>[];
+  const categories = categoryRows.map(r => String(r.name));
+
+  const productRows = db.prepare('SELECT * FROM products ORDER BY popularity DESC, name').all() as Record<string, unknown>[];
+  const products: Product[] = productRows.map(r => ({
+    id: String(r.id),
+    sku: String(r.sku),
+    name: String(r.name),
+    category: String(r.category),
+    price: Number(r.price),
+    image: String(r.image),
+    popularity: Number(r.popularity),
+    active: Number(r.active) === 1,
+    recipe: JSON.parse(String(r.recipe_json || '[]'))
+  }));
+
+  const inventoryRows = db.prepare('SELECT * FROM ingredients ORDER BY name').all() as Record<string, unknown>[];
+  const inventory: InventoryItem[] = inventoryRows.map(r => ({
+    id: String(r.id),
+    sku: String(r.sku),
+    name: String(r.name),
+    category: String(r.category),
+    unit: String(r.unit),
+    stock: Number(r.stock),
+    reorderLevel: Number(r.reorder_level),
+    cost: Number(r.cost),
+    supplier: String(r.supplier),
+    expiry: String(r.expiry)
+  }));
+
+  const movementRows = db.prepare('SELECT * FROM stock_movements ORDER BY created_at DESC LIMIT 200').all() as Record<string, unknown>[];
+  const stockMovements: StockMovement[] = movementRows.map(r => ({
+    id: String(r.id),
+    ingredientId: String(r.ingredient_id),
+    ingredientName: String(r.ingredient_name),
+    movementType: r.movement_type as StockMovement['movementType'],
+    quantityDelta: Number(r.quantity_delta),
+    note: String(r.note),
+    createdAt: String(r.created_at)
+  }));
+
+  const customerRows = db.prepare('SELECT * FROM customers ORDER BY name').all() as Record<string, unknown>[];
+  const customers: Customer[] = customerRows.map(r => ({
+    id: String(r.id),
+    name: String(r.name),
+    phone: String(r.phone),
+    address: String(r.address),
+    due: Number(r.due),
+    loyaltyPoints: Number(r.loyalty_points),
+    favoriteItems: JSON.parse(String(r.favorite_items_json || '[]'))
+  }));
+
+  const tableRows = db.prepare('SELECT * FROM dining_tables ORDER BY number').all() as Record<string, unknown>[];
+  const tables: DiningTable[] = tableRows.map(r => ({
+    id: String(r.id),
+    number: String(r.number),
+    name: String(r.name),
+    capacity: Number(r.capacity),
+    zone: r.zone as DiningTable['zone'],
+    status: r.status as DiningTable['status'],
+    currentGuests: Number(r.current_guests),
+    currentOrderId: r.current_order_id ? String(r.current_order_id) : undefined
+  }));
+
+  const reservationRows = db.prepare('SELECT * FROM reservations ORDER BY date DESC, time ASC').all() as Record<string, unknown>[];
+  const reservations: Reservation[] = reservationRows.map(r => ({
+    id: String(r.id),
+    customerName: String(r.customer_name),
+    phone: String(r.phone),
+    guests: Number(r.guests),
+    date: String(r.date),
+    time: String(r.time),
+    tableId: String(r.table_id),
+    status: r.status as Reservation['status'],
+    notes: String(r.notes)
+  }));
+
+  const supplierRows = db.prepare('SELECT * FROM suppliers ORDER BY name').all() as Record<string, unknown>[];
+  const suppliers: Supplier[] = supplierRows.map(r => ({
+    id: String(r.id),
+    name: String(r.name),
+    phone: String(r.phone),
+    category: String(r.category),
+    due: Number(r.due)
+  }));
+
+  const purchaseRows = db.prepare('SELECT * FROM purchases ORDER BY created_at DESC').all() as Record<string, unknown>[];
+  const purchases: Purchase[] = purchaseRows.map(r => ({
+    id: String(r.id),
+    invoiceNumber: String(r.invoice_number),
+    supplierId: String(r.supplier_id),
+    supplierName: String(r.supplier_name),
+    total: Number(r.total),
+    paid: Number(r.paid),
+    due: Number(r.due),
+    status: r.status as Purchase['status'],
+    createdAt: String(r.created_at),
+    items: JSON.parse(String(r.items_json || '[]'))
+  }));
+
+  const orderRows = db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all() as Record<string, unknown>[];
+  const orders: Order[] = orderRows.map(r => ({
+    id: String(r.id),
+    number: String(r.number),
+    type: r.type as Order['type'],
+    status: r.status as Order['status'],
+    tableId: r.table_id ? String(r.table_id) : undefined,
+    customerId: r.customer_id ? String(r.customer_id) : undefined,
+    customerName: String(r.customer_name),
+    createdAt: String(r.created_at),
+    items: JSON.parse(String(r.items_json || '[]')),
+    subtotal: Number(r.subtotal),
+    tax: Number(r.tax),
+    discount: Number(r.discount),
+    couponCode: r.coupon_code ? String(r.coupon_code) : undefined,
+    total: Number(r.total),
+    paid: Number(r.paid),
+    due: Number(r.due),
+    paymentMethod: r.payment_method as Order['paymentMethod'],
+    kitchenNote: r.kitchen_note ? String(r.kitchen_note) : undefined,
+    deliveryAddress: r.delivery_address ? String(r.delivery_address) : undefined,
+    deliveryPhone: r.delivery_phone ? String(r.delivery_phone) : undefined,
+    riderName: r.rider_name ? String(r.rider_name) : undefined,
+    deliveryStatus: r.delivery_status ? (r.delivery_status as Order['deliveryStatus']) : undefined,
+    deliveryFee: r.delivery_fee ? Number(r.delivery_fee) : 0
+  }));
+
+  const expenseRows = db.prepare('SELECT * FROM expenses ORDER BY date DESC').all() as Record<string, unknown>[];
+  const expenses: Expense[] = expenseRows.map(r => ({
+    id: String(r.id),
+    title: String(r.title),
+    category: r.category as Expense['category'],
+    amount: Number(r.amount),
+    method: r.method as Expense['method'],
+    date: String(r.date),
+    note: String(r.note)
+  }));
+
+  const employeeRows = db.prepare('SELECT * FROM employees ORDER BY name').all() as Record<string, unknown>[];
+  const employees: Employee[] = employeeRows.map(r => ({
+    id: String(r.id),
+    name: String(r.name),
+    role: String(r.role),
+    phone: String(r.phone || ''),
+    shift: r.shift as Employee['shift'],
+    status: r.status as Employee['status'],
+    salary: Number(r.salary),
+    advance: Number(r.advance)
+  }));
+
+  const attendanceRows = db.prepare('SELECT * FROM attendance ORDER BY date DESC, employee_name ASC').all() as Record<string, unknown>[];
+  const attendance: AttendanceRecord[] = attendanceRows.map(r => ({
+    id: String(r.id),
+    employeeId: String(r.employee_id),
+    employeeName: String(r.employee_name),
+    role: String(r.role),
+    shift: String(r.shift),
+    date: String(r.date),
+    status: r.status as AttendanceRecord['status'],
+    checkIn: String(r.check_in),
+    checkOut: String(r.check_out),
+    note: String(r.note)
+  }));
+
+  const payrollRows = db.prepare('SELECT * FROM payroll ORDER BY month DESC, employee_name ASC').all() as Record<string, unknown>[];
+  const payroll: PayrollRecord[] = payrollRows.map(r => ({
+    id: String(r.id),
+    employeeId: String(r.employee_id),
+    employeeName: String(r.employee_name),
+    role: String(r.role),
+    month: String(r.month),
+    baseSalary: Number(r.base_salary),
+    advanceDeducted: Number(r.advance_deducted),
+    bonus: Number(r.bonus),
+    netPay: Number(r.net_pay),
+    status: r.status as PayrollRecord['status'],
+    paidAt: r.paid_at ? String(r.paid_at) : undefined
+  }));
+
+  const couponRows = db.prepare('SELECT * FROM coupons ORDER BY code').all() as Record<string, unknown>[];
+  const coupons: Coupon[] = couponRows.map(r => ({
+    id: String(r.id),
+    code: String(r.code),
+    description: String(r.description),
+    type: r.type as Coupon['type'],
+    value: Number(r.value),
+    minOrder: Number(r.min_order),
+    active: Number(r.active) === 1,
+    usedCount: Number(r.used_count)
+  }));
+
+  const paymentRows = db.prepare('SELECT * FROM payments ORDER BY created_at DESC LIMIT 300').all() as Record<string, unknown>[];
+  const payments: PaymentEntry[] = paymentRows.map(r => ({
+    id: String(r.id),
+    direction: r.direction as PaymentEntry['direction'],
+    category: r.category as PaymentEntry['category'],
+    referenceId: String(r.reference_id),
+    partyName: String(r.party_name),
+    amount: Number(r.amount),
+    method: r.method as PaymentEntry['method'],
+    note: String(r.note),
+    createdAt: String(r.created_at)
+  }));
+
+  const logRows = db.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 100').all() as Record<string, unknown>[];
+  const logs: LogEntry[] = logRows.map(r => ({
+    id: String(r.id),
+    title: String(r.title),
+    detail: String(r.detail),
+    actor: String(r.actor),
+    time: String(r.time)
+  }));
+
+  const userRows = db.prepare('SELECT id, email, display_name, role, active FROM users ORDER BY display_name').all() as Record<string, unknown>[];
+  const users: AuthUser[] = userRows.map(r => ({
+    id: String(r.id),
+    email: String(r.email),
+    displayName: String(r.display_name),
+    role: r.role as Role
+  }));
+
+  return {
+    settings,
+    categories,
+    products,
+    inventory,
+    stockMovements,
+    customers,
+    tables,
+    reservations,
+    suppliers,
+    purchases,
+    orders,
+    expenses,
+    employees,
+    attendance,
+    payroll,
+    coupons,
+    payments,
+    logs,
+    users
+  };
+}
+
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', database: 'connected', engine: 'sqlite' });
+});
+
+app.post('/api/auth/login', authLimiter, async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Enter a valid email and password' });
+    }
+    const user = db.prepare('SELECT * FROM users WHERE email = ? AND active = 1').get(email) as Record<string, unknown> | undefined;
+    if (!user || !(await bcrypt.compare(password, String(user.password_hash)))) {
+      return res.status(401).json({ error: 'Email or password is incorrect' });
+    }
+    const authUser: AuthUser = {
+      id: String(user.id),
+      email: String(user.email),
+      displayName: String(user.display_name),
+      role: user.role as Role
+    };
+    const token = jwt.sign({ sub: authUser.id, role: authUser.role }, secret, { expiresIn: '12h', issuer: 'musafir-pos' });
+    appendAuditLog('User signed in', `${authUser.displayName} (${authUser.role}) logged in.`, authUser.displayName);
+    res.json({ token, user: authUser });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Authentication failed' });
+  }
+});
+
+app.get('/api/auth/me', (req: AuthedRequest, res) => {
+  try {
+    const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+    if (!token) return res.status(401).json({ error: 'Authentication required' });
+    const claims = jwt.verify(token, secret) as jwt.JwtPayload;
+    const row = db.prepare('SELECT id, email, display_name, role FROM users WHERE id = ? AND active = 1').get(String(claims.sub)) as Record<string, unknown> | undefined;
+    if (!row) return res.status(401).json({ error: 'Session is no longer valid' });
+    res.json({
+      user: {
+        id: String(row.id),
+        email: String(row.email),
+        displayName: String(row.display_name),
+        role: row.role as Role
+      }
+    });
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired session' });
+  }
+});
+
+app.get('/api/bootstrap', (_req, res) => {
+  res.json(readAllState());
+});
+
+app.post('/api/sync', requireAuth, (req: AuthedRequest, res) => {
+  try {
+    const body = req.body || {};
+    inTransaction(() => {
+      if (body.settings) {
+        const s: RestaurantSettings = body.settings;
+        db.prepare(`
+          INSERT OR REPLACE INTO settings (
+            id, restaurant_name, branch_name, branch_code, phone, address, currency, tax_rate, receipt_footer, public_menu_url
+          ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          s.restaurantName,
+          s.branchName,
+          s.branchCode,
+          s.phone,
+          s.address,
+          s.currency,
+          s.taxRate,
+          s.receiptFooter,
+          s.publicMenuUrl
+        );
+      }
+
+      if (Array.isArray(body.categories)) {
+        db.exec('DELETE FROM categories');
+        const stmt = db.prepare('INSERT OR IGNORE INTO categories (id, name, sort_order) VALUES (?, ?, ?)');
+        body.categories.forEach((name: string, index: number) => {
+          stmt.run(`cat-${index + 1}`, name, index + 1);
+        });
+      }
+
+      if (Array.isArray(body.products)) {
+        db.exec('DELETE FROM products');
+        const stmt = db.prepare(`
+          INSERT INTO products (id, sku, name, category, price, image, popularity, active, recipe_json)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const p of body.products as Product[]) {
+          stmt.run(
+            p.id,
+            p.sku || p.id.toUpperCase(),
+            p.name,
+            p.category,
+            p.price,
+            p.image,
+            p.popularity || 80,
+            p.active === false ? 0 : 1,
+            JSON.stringify(p.recipe || [])
+          );
+        }
+      }
+
+      if (Array.isArray(body.inventory)) {
+        db.exec('DELETE FROM ingredients');
+        const stmt = db.prepare(`
+          INSERT INTO ingredients (id, sku, name, category, unit, stock, reorder_level, cost, supplier, expiry)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const i of body.inventory as InventoryItem[]) {
+          stmt.run(
+            i.id,
+            i.sku || i.id.toUpperCase(),
+            i.name,
+            i.category,
+            i.unit,
+            i.stock,
+            i.reorderLevel,
+            i.cost,
+            i.supplier,
+            i.expiry
+          );
+        }
+      }
+
+      if (Array.isArray(body.stockMovements)) {
+        db.exec('DELETE FROM stock_movements');
+        const stmt = db.prepare(`
+          INSERT INTO stock_movements (id, ingredient_id, ingredient_name, movement_type, quantity_delta, note, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const m of body.stockMovements as StockMovement[]) {
+          stmt.run(m.id, m.ingredientId, m.ingredientName, m.movementType, m.quantityDelta, m.note, m.createdAt);
+        }
+      }
+
+      if (Array.isArray(body.customers)) {
+        db.exec('DELETE FROM customers');
+        const stmt = db.prepare(`
+          INSERT INTO customers (id, name, phone, address, due, loyalty_points, favorite_items_json)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const c of body.customers as Customer[]) {
+          stmt.run(c.id, c.name, c.phone, c.address, c.due, c.loyaltyPoints, JSON.stringify(c.favoriteItems || []));
+        }
+      }
+
+      if (Array.isArray(body.tables)) {
+        db.exec('DELETE FROM dining_tables');
+        const stmt = db.prepare(`
+          INSERT INTO dining_tables (id, number, name, capacity, zone, status, current_guests, current_order_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const t of body.tables as DiningTable[]) {
+          stmt.run(t.id, t.number, t.name, t.capacity, t.zone, t.status, t.currentGuests, t.currentOrderId || null);
+        }
+      }
+
+      if (Array.isArray(body.reservations)) {
+        db.exec('DELETE FROM reservations');
+        const stmt = db.prepare(`
+          INSERT INTO reservations (id, customer_name, phone, guests, date, time, table_id, status, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const r of body.reservations as Reservation[]) {
+          stmt.run(r.id, r.customerName, r.phone, r.guests, r.date, r.time, r.tableId, r.status, r.notes);
+        }
+      }
+
+      if (Array.isArray(body.suppliers)) {
+        db.exec('DELETE FROM suppliers');
+        const stmt = db.prepare(`
+          INSERT INTO suppliers (id, name, phone, category, due)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        for (const s of body.suppliers as Supplier[]) {
+          stmt.run(s.id, s.name, s.phone, s.category, s.due);
+        }
+      }
+
+      if (Array.isArray(body.purchases)) {
+        db.exec('DELETE FROM purchases');
+        const stmt = db.prepare(`
+          INSERT INTO purchases (id, invoice_number, supplier_id, supplier_name, total, paid, due, status, created_at, items_json)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const pur of body.purchases as Purchase[]) {
+          stmt.run(
+            pur.id,
+            pur.invoiceNumber,
+            pur.supplierId,
+            pur.supplierName,
+            pur.total,
+            pur.paid,
+            pur.due,
+            pur.status,
+            pur.createdAt,
+            JSON.stringify(pur.items || [])
+          );
+        }
+      }
+
+      if (Array.isArray(body.orders)) {
+        db.exec('DELETE FROM orders');
+        const stmt = db.prepare(`
+          INSERT INTO orders (
+            id, number, type, status, table_id, customer_id, customer_name, created_at, items_json,
+            subtotal, tax, discount, coupon_code, total, paid, due, payment_method, kitchen_note,
+            delivery_address, delivery_phone, rider_name, delivery_status, delivery_fee
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const o of body.orders as Order[]) {
+          stmt.run(
+            o.id,
+            o.number,
+            o.type,
+            o.status,
+            o.tableId || null,
+            o.customerId || null,
+            o.customerName,
+            o.createdAt,
+            JSON.stringify(o.items || []),
+            o.subtotal,
+            o.tax,
+            o.discount,
+            o.couponCode || null,
+            o.total,
+            o.paid,
+            o.due,
+            o.paymentMethod,
+            o.kitchenNote || null,
+            o.deliveryAddress || null,
+            o.deliveryPhone || null,
+            o.riderName || null,
+            o.deliveryStatus || null,
+            o.deliveryFee || 0
+          );
+        }
+      }
+
+      if (Array.isArray(body.expenses)) {
+        db.exec('DELETE FROM expenses');
+        const stmt = db.prepare(`
+          INSERT INTO expenses (id, title, category, amount, method, date, note)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const e of body.expenses as Expense[]) {
+          stmt.run(e.id, e.title, e.category, e.amount, e.method, e.date, e.note);
+        }
+      }
+
+      if (Array.isArray(body.employees)) {
+        db.exec('DELETE FROM employees');
+        const stmt = db.prepare(`
+          INSERT INTO employees (id, name, role, phone, shift, status, salary, advance)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const emp of body.employees as Employee[]) {
+          stmt.run(emp.id, emp.name, emp.role, emp.phone || '', emp.shift, emp.status, emp.salary, emp.advance);
+        }
+      }
+
+      if (Array.isArray(body.attendance)) {
+        db.exec('DELETE FROM attendance');
+        const stmt = db.prepare(`
+          INSERT INTO attendance (id, employee_id, employee_name, role, shift, date, status, check_in, check_out, note)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const att of body.attendance as AttendanceRecord[]) {
+          stmt.run(
+            att.id,
+            att.employeeId,
+            att.employeeName,
+            att.role,
+            att.shift,
+            att.date,
+            att.status,
+            att.checkIn,
+            att.checkOut,
+            att.note
+          );
+        }
+      }
+
+      if (Array.isArray(body.payroll)) {
+        db.exec('DELETE FROM payroll');
+        const stmt = db.prepare(`
+          INSERT INTO payroll (id, employee_id, employee_name, role, month, base_salary, advance_deducted, bonus, net_pay, status, paid_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const pr of body.payroll as PayrollRecord[]) {
+          stmt.run(
+            pr.id,
+            pr.employeeId,
+            pr.employeeName,
+            pr.role,
+            pr.month,
+            pr.baseSalary,
+            pr.advanceDeducted,
+            pr.bonus,
+            pr.netPay,
+            pr.status,
+            pr.paidAt || null
+          );
+        }
+      }
+
+      if (Array.isArray(body.coupons)) {
+        db.exec('DELETE FROM coupons');
+        const stmt = db.prepare(`
+          INSERT INTO coupons (id, code, description, type, value, min_order, active, used_count)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const cpn of body.coupons as Coupon[]) {
+          stmt.run(cpn.id, cpn.code, cpn.description, cpn.type, cpn.value, cpn.minOrder, cpn.active ? 1 : 0, cpn.usedCount);
+        }
+      }
+
+      if (Array.isArray(body.payments)) {
+        db.exec('DELETE FROM payments');
+        const stmt = db.prepare(`
+          INSERT INTO payments (id, direction, category, reference_id, party_name, amount, method, note, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const pmt of body.payments as PaymentEntry[]) {
+          stmt.run(
+            pmt.id,
+            pmt.direction,
+            pmt.category,
+            pmt.referenceId,
+            pmt.partyName,
+            pmt.amount,
+            pmt.method,
+            pmt.note,
+            pmt.createdAt
+          );
+        }
+      }
+
+      if (Array.isArray(body.logs)) {
+        db.exec('DELETE FROM audit_logs');
+        const stmt = db.prepare(`
+          INSERT INTO audit_logs (id, title, detail, actor, time, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `);
+        const now = new Date().toISOString();
+        for (const l of body.logs as LogEntry[]) {
+          stmt.run(l.id, l.title, l.detail, l.actor || 'Admin', l.time, now);
+        }
+      }
+    });
+    res.json({ status: 'synced' });
+  } catch (error) {
+    console.error('Sync failed:', error);
+    res.status(500).json({ error: 'Failed to sync state to database' });
+  }
+});
+
+app.post('/api/users', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    if (!req.user || !['owner', 'manager'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only owners and managers can create staff accounts' });
+    }
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const displayName = String(req.body?.displayName || '').trim();
+    const role = String(req.body?.role || 'cashier');
+    const password = String(req.body?.password || '');
+    const validRoles: Role[] = ['owner', 'manager', 'cashier', 'kitchen', 'inventory', 'accountant', 'delivery'];
+    if (!email || !displayName) return res.status(400).json({ error: 'Email and display name are required' });
+    if (!validRoles.includes(role as Role)) return res.status(400).json({ error: 'Unknown role' });
+    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    const exists = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+    if (exists) return res.status(409).json({ error: 'That email already has an account' });
+
+    const id = `u-${Date.now().toString(36)}`;
+    const hash = await bcrypt.hash(password, 10);
+    db.prepare(`
+      INSERT INTO users (id, email, password_hash, display_name, role, active, created_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?)
+    `).run(id, email, hash, displayName, role, new Date().toISOString());
+    appendAuditLog('Staff account created', `${displayName} · ${role}`, req.user.displayName);
+
+    res.status(201).json({
+      user: { id, email, displayName, role }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Could not create the staff account' });
+  }
+});
+
+app.get('/api/menu', (_req, res) => {
+  const state = readAllState();
+  res.json({
+    restaurant: state.settings,
+    categories: state.categories,
+    products: state.products.filter(p => p.active !== false)
+  });
+});
+
+app.get('/api/menu/qr', async (req, res) => {
+  try {
+    const state = readAllState();
+    const table = String(req.query.table || 'T-01');
+    const branch = String(req.query.branch || state.settings.branchCode || 'DHK-01');
+    const requestOrigin = `${req.protocol}://${req.get('host')}`;
+    const configured = String(req.query.baseUrl || state.settings.publicMenuUrl || '').replace(/\/$/, '');
+    const base = configured && !configured.includes('musafir-pos.local') ? configured : `${requestOrigin}/menu`;
+    const url = `${base}?branch=${encodeURIComponent(branch)}&table=${encodeURIComponent(table)}`;
+    const png = await QRCode.toBuffer(url, {
+      type: 'png',
+      width: 512,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#14191f', light: '#ffffff' }
+    });
+    res.type('png').set('Cache-Control', 'no-store').send(png);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to generate QR code' });
+  }
+});
+
+app.get('/api/inventory', (_req, res) => {
+  const state = readAllState();
+  res.json({ items: state.inventory, movements: state.stockMovements });
+});
+
+app.get('/api/suppliers', (_req, res) => {
+  const state = readAllState();
+  res.json({ suppliers: state.suppliers });
+});
+
+app.get('/api/receivables', (_req, res) => {
+  const state = readAllState();
+  res.json({ receivables: state.customers.filter(c => c.due > 0) });
+});
+
+app.get('/api/payables', (_req, res) => {
+  const state = readAllState();
+  res.json({ payables: state.suppliers.filter(s => s.due > 0) });
+});
+
+app.use((error: Error & { status?: number }, _req: Request, res: Response, _next: NextFunction) => {
+  console.error(error);
+  res.status(error.status || 500).json({ error: error.status ? error.message : 'Internal server error' });
+});
+
+const port = Number(process.env.PORT || 3001);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Musafir POS SQLite API listening on http://0.0.0.0:${port}`);
+});

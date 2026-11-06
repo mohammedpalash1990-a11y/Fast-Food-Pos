@@ -1,49 +1,80 @@
 # Musafir Fast Food POS
 
-A premium responsive restaurant operations demo built with React, TypeScript, Vite, Tailwind CSS and PostgreSQL API scaffolding.
+A complete restaurant point-of-sale and back-office console for **Musafir Fast Food** — React + TypeScript + Vite front end with an **Express + SQLite** backend (Node's built-in `node:sqlite`). Every screen writes to the database; there are no static placeholder modules.
 
-## Start the PostgreSQL database and API
+![stack](https://img.shields.io/badge/React-18-61dafb) ![stack](https://img.shields.io/badge/TypeScript-5-3178c6) ![stack](https://img.shields.io/badge/Express-4-000000) ![stack](https://img.shields.io/badge/SQLite-node%3Asqlite-044a64)
 
-Requirements: Node.js 20+, Docker Compose, and a private deployment environment.
+## Quick start
+
+Requires **Node.js 22.5+** (uses the built-in `node:sqlite` module).
 
 ```sh
-cp .env.example .env
-# Change JWT_SECRET and SEED_ADMIN_PASSWORD before starting anything.
-# Set POSTGRES_PASSWORD to the same secure value as the password portion of DATABASE_URL.
-docker compose up -d db
 npm install
-npm run db:migrate
-npm run db:seed
-npm run api:dev
+npm run db:migrate     # create the SQLite schema at data/pos.db
+npm run db:seed        # load the demo branch, menu, orders and staff
+npm run api            # API on http://localhost:3001
+npm run dev            # Vite console on http://localhost:5173
 ```
 
-In another terminal run `npm run dev`. Vite proxies `/api` requests to `http://localhost:3001`. Health check: `http://localhost:3001/api/health`.
+`npm run dev` proxies `/api` to the API server, so open **http://localhost:5173**.
 
-Seed admin credentials come from `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`. Never commit `.env`; disable/delete the seeded account and provision real users before exposing this service. JWT signing key must be at least 32 characters. Use HTTPS, a strong database password, backups, and a secret manager in deployment.
+### Seeded logins
 
-## Backend endpoints delivered
+| Email | Role | Password |
+| --- | --- | --- |
+| `admin@musafir.local` | owner | `Musafir@2026!` |
+| `manager@musafir.local` | manager | `Musafir@2026!` |
+| `cashier@musafir.local` | cashier | `Musafir@2026!` |
+| `kitchen@musafir.local` | kitchen | `Musafir@2026!` |
+| `inventory@musafir.local` | inventory | `Musafir@2026!` |
+| `accounts@musafir.local` | accountant | `Musafir@2026!` |
 
-- `POST /api/auth/login`, `GET /api/auth/me`: bcrypt password verification, short-lived JWT, active-user reload, login rate limiting.
-- `GET /api/inventory`, `POST/PATCH /api/inventory`: role-checked ingredient listing/editing.
-- `POST /api/purchases`: transactional supplier invoice, stock receiving, stock movement and initial payment.
-- `GET /api/suppliers`, `POST /api/suppliers/:id/payments`, `GET /api/payables`: supplier balances/payments.
-- `GET /api/receivables`, `POST /api/customers/:id/payments`: customer balances and due collection.
-- `POST /api/orders`: transactional order insertion and recipe stock deduction with stock row locks and negative-stock rejection.
-- `GET /api/menu`, `GET /api/menu/qr`: public menu and generated PNG QR code (requires a public hosted menu URL and branch id).
-- `GET /api/health`: database connectivity.
+Override with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` before the first seed, and set a strong `JWT_SECRET` (32+ chars) in `.env`. Copy `.env.example` to get started.
 
-PostgreSQL schema supports organizations, branches, roles, users, products, categories, ingredient stock, recipes, customers, orders, payments, suppliers, purchases, stock movements and audit logs. The API scopes operational data by authenticated organization/branch and roles. Financial changes are transactionally recorded.
+## Modules (all connected to the API)
 
-## Frontend status and limitations
+- **Workspace** — Dashboard, POS/Billing, Orders, Kitchen Display, Tables Management, Reservations
+- **Restaurant** — Customers, Menu Management, Categories, Inventory, Recipes & Ingredients, Suppliers, Purchase Management, Delivery Management
+- **Finance & team** — Expenses, Employees, Attendance, Salary & Payroll, Accounting ledger, Sales Reports, Profit & Loss, Customer Due, Discounts & Coupons
+- **Channels & setup** — QR Menu (PNG per table + public guest menu at `/menu`), Settings, User Roles & Permissions
 
-The existing mobile-responsive admin UI and local demo workflows remain. The API is an initial backend foundation and is not yet fully connected to the React views: login UI/token lifecycle, inventory edit forms, purchase/payment UI, remote menu/order fetching, and database-to-dashboard reporting still need integration. The generated QR endpoint returns an actual PNG but needs deployment URL configuration; the customer ordering page itself is not yet built. No live payment gateway is configured. This is not yet production-ready: run typechecks, integration/security tests, create migrations/backups policy, and review the API before handling real financial data.
+### What actually happens when you use it
 
-## Useful commands
+- **POS** builds a ticket with table/customer/coupon/notes, validates coupon minimums, computes VAT and delivery fee, then on charge it: creates the order, **deducts ingredient stock via the product recipe**, logs stock movements, marks the table occupied, accrues customer due + loyalty points, increments coupon usage and posts a payment entry.
+- **Orders** advances the status lifecycle and settles balances (posting a due-collection payment).
+- **Purchases** receives an invoice, increases ingredient stock, records movements, updates supplier payable and posts the outgoing payment.
+- **Payroll** generates monthly records from the staff directory and pays them, clearing advances and posting payroll to the ledger.
+- **Inventory** movements, **expenses**, **supplier payments** and **customer due collections** all feed the **Accounting** ledger and **Profit & Loss** (COGS from recipe cost).
+
+## API
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/api/health` | DB connectivity probe |
+| POST | `/api/auth/login` | bcrypt + JWT (rate limited) |
+| GET | `/api/auth/me` | Validate bearer token |
+| GET | `/api/bootstrap` | Full branch snapshot for the console |
+| POST | `/api/sync` | Transactional write-back of the console state |
+| GET | `/api/menu` | Public menu JSON |
+| GET | `/api/menu/qr?table=T-01` | PNG QR code for a table |
+| GET | `/api/inventory` / `/api/suppliers` / `/api/receivables` / `/api/payables` | Read-only reporting slices |
+
+Data lives in `data/pos.db` (ignored by git). Delete that file and re-run `npm run db:seed` for a clean demo.
+
+## Scripts
 
 ```sh
-npm run build
-npm run typecheck:server
-npm run db:migrate
-npm run db:seed
-npm run api:dev
+npm run dev              # Vite dev server (0.0.0.0:5173)
+npm run build            # tsc project build + production bundle
+npm run api              # Express API (0.0.0.0:3001)
+npm run api:dev          # API with watch reload
+npm run db:migrate       # apply SQLite schema
+npm run db:seed          # seed demo data
+npm run typecheck:server # type-check the API project
 ```
+
+## Notes
+
+- Offline resilience: if the API is unreachable the console keeps working against a local snapshot and retries the sync when the server returns.
+- Authentication uses bearer JWTs from `/api/auth/login`; the login screen also offers an offline preview mode for local demos.
+- This is a demo build — put it behind HTTPS, rotate the seeded passwords and secrets, and add backups before using it for real money.
