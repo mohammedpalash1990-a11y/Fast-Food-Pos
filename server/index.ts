@@ -99,14 +99,17 @@ app.patch('/api/orders/:id/status',authenticate,allow('owner','manager','cashier
           await client.query("INSERT INTO stock_movements(branch_id,ingredient_id,movement_type,quantity_delta,reference_id,note,created_by) VALUES($1,$2,'adjustment',$3,$4,$5,$6)",[req.user!.branchId,movement.ingredient_id,quantity,String(req.params.id),`Cancelled order #${current.rows[0].order_number} stock returned`,req.user!.id]);
         }
       }
-      const paid=await client.query("SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS balance,COALESCE((SELECT method FROM payments WHERE order_id=$1 AND direction='in' ORDER BY created_at DESC LIMIT 1),'Cash') AS method FROM payments WHERE order_id=$1",[String(req.params.id)]);
-      const refund=Number(paid.rows[0].balance);
-      if(refund>0){
-        await client.query("INSERT INTO payments(organization_id,branch_id,order_id,amount,method,direction,note,created_by) VALUES($1,$2,$3,$4,$5,'out',$6,$7)",[req.user!.organizationId,req.user!.branchId,String(req.params.id),refund,paid.rows[0].method,`Refund for cancelled order #${current.rows[0].order_number}`,req.user!.id]);
+      const refundable=await client.query("SELECT method,SUM(CASE WHEN direction='in' THEN amount ELSE -amount END) AS balance FROM payments WHERE order_id=$1 GROUP BY method HAVING SUM(CASE WHEN direction='in' THEN amount ELSE -amount END)>0 ORDER BY method",[String(req.params.id)]);
+      let refundTotal=0;
+      for(const payment of refundable.rows){
+        const refund=Number(payment.balance);
+        if(refund<=0)continue;
+        await client.query("INSERT INTO payments(organization_id,branch_id,order_id,amount,method,direction,note,created_by) VALUES($1,$2,$3,$4,$5,'out',$6,$7)",[req.user!.organizationId,req.user!.branchId,String(req.params.id),refund,payment.method,`Refund for cancelled order #${current.rows[0].order_number}`,req.user!.id]);
+        refundTotal+=refund;
       }
     }
     const updated=await client.query('UPDATE orders SET status=$1 WHERE id=$2 AND branch_id=$3 RETURNING id,order_number,status,created_at',[parsed.data.status,String(req.params.id),req.user!.branchId]);
-    await audit(client,req.user!,'order.status_changed','order',String(req.params.id),{from:previousStatus,to:parsed.data.status,stockRestored:previousStatus!=='Cancelled'&&parsed.data.status==='Cancelled'});
+    await audit(client,req.user!,'order.status_changed','order',String(req.params.id),{from:previousStatus,to:parsed.data.status,stockRestored:previousStatus!=='Cancelled'&&parsed.data.status==='Cancelled',refundTotal:previousStatus!=='Cancelled'&&parsed.data.status==='Cancelled'?refundTotal:0});
     return updated.rows[0];
   });
   res.json({order:result});
