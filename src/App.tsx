@@ -256,16 +256,19 @@ function App() {
       const branchId = login.user?.branchId;
       if (!login.token || !branchId) throw new Error('Login response did not include a branch session.');
       const authHeaders = { Authorization: `Bearer ${login.token}` };
-      const [menuResponse, ordersResponse, inventoryResponse] = await Promise.all([
+      const [menuResponse, ordersResponse, inventoryResponse, suppliersResponse] = await Promise.all([
         fetch(`${base}/api/menu?branchId=${encodeURIComponent(branchId)}`),
         fetch(`${base}/api/orders?limit=150`, { headers: authHeaders }),
-        fetch(`${base}/api/inventory`, { headers: authHeaders })
+        fetch(`${base}/api/inventory`, { headers: authHeaders }),
+        fetch(`${base}/api/suppliers`, { headers: authHeaders })
       ]);
-      const [menu, orderData, inventoryData] = await Promise.all([menuResponse.json(), ordersResponse.json(), inventoryResponse.json()]);
+      const [menu, orderData, inventoryData, supplierData] = await Promise.all([menuResponse.json(), ordersResponse.json(), inventoryResponse.json(), suppliersResponse.json()]);
       if (!menuResponse.ok || !Array.isArray(menu.products) || !menu.products.length) throw new Error(menu.error || 'No active menu products were returned for this branch.');
       if (!ordersResponse.ok || !Array.isArray(orderData.orders)) throw new Error(orderData.error || 'Could not load branch order history.');
       if (!inventoryResponse.ok || !Array.isArray(inventoryData.items)) throw new Error(inventoryData.error || 'Could not load branch inventory.');
+      if (!suppliersResponse.ok || !Array.isArray(supplierData.suppliers)) throw new Error(supplierData.error || 'Could not load branch suppliers.');
       setInventory(inventoryData.items.map((item: {id:string;name:string;category?:string;unit:string;stock:string|number;trackStock?:boolean;reorderLevel:string|number;unitCost:string|number;supplier?:string;expiresOn?:string|null})=>({id:item.id,name:item.name,category:item.category||'General',unit:item.unit,stock:Number(item.stock),trackStock:Boolean(item.trackStock),reorderLevel:Number(item.reorderLevel),cost:Number(item.unitCost),supplier:item.supplier||'—',expiry:item.expiresOn||''})));
+      setSuppliers(supplierData.suppliers.map((supplier: {id:string;name:string;phone?:string;category?:string;payable:string|number})=>({id:supplier.id,name:supplier.name,phone:supplier.phone||'',category:supplier.category||'General',due:Number(supplier.payable)})));
       setOrders(orderData.orders.map((saved: { id:string; order_number:number|string; order_type:Order['type']; status:string; created_at:string; customer_name:string; subtotal:string|number; tax:string|number; discount:string|number; total:string|number; paid:string|number; payment_method:string; notes?:string; items:Array<{id:string;productId:string|null;name:string;qty:number;unitPrice:string|number}> }) => ({
         id: saved.id,
         number: String(saved.order_number),
@@ -456,14 +459,14 @@ function App() {
   const ordersView = (): ReactNode => <section className={`${panel} p-5`}><div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Service workflow','Orders','Monitor the order lifecycle and resume checks on hold.')}</div><div className="space-y-3">{orders.map(order=><article key={order.id} className="rounded-2xl border border-white/[.07] bg-[#191e24] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><div className="font-semibold text-white">{order.number==='HOLD'?'Held check':`Order #${order.number}`} <span className="ml-2 text-xs font-normal text-slate-400">{order.customerName}</span></div><div className="mt-1 text-xs text-slate-500">{order.type} · {new Date(order.createdAt).toLocaleString()}</div></div><div className="flex items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-xs ${order.number==='HOLD'?'bg-amber-400/10 text-amber-300':'bg-white/[.06] text-slate-300'}`}>{order.number==='HOLD'?'On hold':order.status}</span>{order.number==='HOLD'?<button onClick={()=>resumeOrder(order)} className="rounded-lg bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]">Resume</button>:order.status!=='Completed'&&<button onClick={()=>changeStatus(order.id)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:border-[#e7b943]/40">Next status</button>}</div></div><div className="mt-3 flex flex-wrap justify-between gap-2 border-t border-white/[.06] pt-3 text-xs text-slate-400"><span>{order.items.map(item=>`${item.qty}× ${item.name}`).join(' · ')}</span><span className="font-semibold text-[#e7b943]">{currency(order.total)} · Paid {currency(order.paid)}</span></div>{order.kitchenNote&&<p className="mt-2 text-xs text-slate-500">Kitchen note: {order.kitchenNote}</p>}</article>)}</div>{!orders.length&&<p className="py-12 text-center text-slate-500">No orders yet.</p>}</section>;
   const kitchen = (): ReactNode => <div><div className="mb-5">{heading('Live kitchen','Kitchen Display','Advance tickets here; order status is shared with the Orders screen.')}</div><div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">{workflow.slice(0,4).map(status=><section key={status} className={`${panel} min-h-64 p-4`}><div className="mb-3 flex items-center justify-between"><h2 className="font-semibold text-white">{status}</h2><span className="rounded-full bg-white/[.06] px-2 py-1 text-xs text-slate-400">{orders.filter(order=>order.status===status&&order.number!=='HOLD').length}</span></div>{orders.filter(order=>order.status===status&&order.number!=='HOLD').map(order=><article key={order.id} className="mb-3 rounded-xl border border-white/[.07] bg-[#191e24] p-3"><div className="flex justify-between"><strong className="text-white">#{order.number}</strong><span className="text-xs text-slate-500">{new Date(order.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div><div className="mt-3 space-y-1 text-sm text-slate-300">{order.items.map(item=><div key={`${order.id}-${item.id}`}>{item.qty}× {item.name}</div>)}</div>{order.kitchenNote&&<p className="mt-3 rounded-lg bg-amber-300/5 p-2 text-xs text-amber-200">{order.kitchenNote}</p>}<button onClick={()=>changeStatus(order.id)} className="mt-3 w-full rounded-lg bg-[#e7b943] py-2 text-xs font-semibold text-[#17130b]">{status==='Ready'?'Complete order':`Mark ${workflow[workflow.indexOf(status)+1]}`}</button></article>)}{!orders.some(order=>order.status===status&&order.number!=='HOLD')&&<p className="py-8 text-center text-xs text-slate-600">No tickets</p>}</section>)}</div></div>;
   const inventoryView = (): ReactNode => <section className={`${panel} p-5`}><div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Stock control','Inventory','Items are unlimited until you enter a quantity to track.')}<button onClick={addInventoryItem} className="inline-flex items-center gap-2 rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]"><Plus size={14}/> Add stock item</button></div><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="text-[11px] uppercase tracking-wider text-slate-500"><tr><th className="pb-3">Ingredient</th><th className="pb-3">Category</th><th className="pb-3">On hand</th><th className="pb-3">Reorder at</th><th className="pb-3">Supplier</th><th className="pb-3">Status</th><th/></tr></thead><tbody>{inventory.map(item=><tr key={item.id} className="border-t border-white/[.06]"><td className="py-3 font-medium text-slate-200">{item.name}</td><td className="py-3 text-slate-400">{item.category}</td><td className="py-3 text-slate-300">{item.trackStock?`${item.stock} ${item.unit}`:'Unlimited'}</td><td className="py-3 text-slate-400">{item.trackStock?`${item.reorderLevel} ${item.unit}`:'—'}</td><td className="py-3 text-slate-400">{item.supplier}</td><td className="py-3"><span className={`rounded-full px-2 py-1 text-[11px] ${!item.trackStock?'bg-slate-400/10 text-slate-300':item.stock<=item.reorderLevel?'bg-rose-400/10 text-rose-300':'bg-emerald-400/10 text-emerald-300'}`}>{!item.trackStock?'Unlimited':item.stock<=item.reorderLevel?'Restock':'In stock'}</span></td><td className="py-3 text-right"><button onClick={()=>addStock(item)} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-300 hover:border-[#e7b943]/40">Receive stock</button></td></tr>)}</tbody></table></div></section>;
-  const addPurchase = () => {
+  const addPurchase = async () => {
     if (!inventory.length || !suppliers.length) { flash('Add at least one inventory item and supplier first.'); return; }
-    const itemOptions = inventory.map((item, index) => `${index + 1}. ${item.name} (${item.trackStock ? `${item.stock} ${item.unit}` : 'Unlimited'})`).join('\n');
-    const itemChoice = Number(window.prompt(`Select inventory item by number:\n${itemOptions}`, '1'));
+    const itemOptions = inventory.map((item, index) => `${index + 1}. ${item.name} (${item.trackStock ? `${item.stock} ${item.unit}` : 'Unlimited'})`).join('\\n');
+    const itemChoice = Number(window.prompt(`Select inventory item by number:\\n${itemOptions}`, '1'));
     if (!Number.isInteger(itemChoice) || itemChoice < 1 || itemChoice > inventory.length) { flash('Select a valid inventory item.'); return; }
     const item = inventory[itemChoice - 1];
-    const supplierOptions = suppliers.map((supplier, index) => `${index + 1}. ${supplier.name}`).join('\n');
-    const supplierChoice = Number(window.prompt(`Select supplier by number:\n${supplierOptions}`, String(Math.max(1, suppliers.findIndex(supplier => supplier.name === item.supplier) + 1))));
+    const supplierOptions = suppliers.map((supplier, index) => `${index + 1}. ${supplier.name}`).join('\\n');
+    const supplierChoice = Number(window.prompt(`Select supplier by number:\\n${supplierOptions}`, String(Math.max(1, suppliers.findIndex(supplier => supplier.name === item.supplier) + 1))));
     if (!Number.isInteger(supplierChoice) || supplierChoice < 1 || supplierChoice > suppliers.length) { flash('Select a valid supplier.'); return; }
     const supplier = suppliers[supplierChoice - 1];
     const quantity = Number(window.prompt(`Quantity received (${item.unit})`, '1'));
@@ -478,13 +481,34 @@ function App() {
       paymentMethod = method as PaymentMethod;
     }
     const date = window.prompt('Purchase date (YYYY-MM-DD)', localDate()) || localDate();
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date) || localDate(new Date(`${date}T00:00:00`)) !== date) { flash('Enter a valid purchase date.'); return; }
+    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T00:00:00`).getTime()) || localDate(new Date(`${date}T00:00:00`)) !== date) { flash('Enter a valid purchase date.'); return; }
     const purchase: PurchaseRecord = { id: `purchase-${Date.now()}`, date, supplierId: supplier.id, supplierName: supplier.name, inventoryId: item.id, itemName: item.name, quantity, unit: item.unit, unitCost, total: quantity * unitCost, paymentStatus: paymentStatus as 'Paid' | 'Credit', paymentMethod, createdAt: new Date().toISOString() };
+    if (apiConnected && apiToken) {
+      try {
+        const response = await fetch(`${apiBase.replace(/\\/$/, '')}/api/purchases`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiToken}` },
+          body: JSON.stringify({
+            supplierId: supplier.id,
+            invoiceNumber: `POS-${Date.now()}`,
+            paid: paymentStatus === 'Paid' ? purchase.total : 0,
+            paymentMethod: paymentMethod || 'Cash',
+            items: [{ ingredientId: item.id, quantity, unitCost }]
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Purchase could not be saved to the database.');
+        purchase.id = result.purchase.id;
+      } catch (error) {
+        flash(error instanceof Error ? error.message : 'Purchase was not saved to the server.');
+        return;
+      }
+    }
     setInventory(current => current.map(entry => entry.id === item.id ? { ...entry, stock: entry.stock + quantity, trackStock: true, cost: unitCost, supplier: supplier.name } : entry));
     if (paymentStatus === 'Credit') setSuppliers(current => current.map(entry => entry.id === supplier.id ? { ...entry, due: entry.due + purchase.total } : entry));
     setPurchases(current => [purchase, ...current]);
     setLogs(current => [{ id: `purchase-log-${Date.now()}`, title: 'Stock purchase received', detail: `${item.name} · +${quantity} ${item.unit} · ${currency(purchase.total)} · ${supplier.name} · ${paymentStatus}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
-    flash(`Purchase saved. ${quantity} ${item.unit} added to inventory.`);
+    flash(apiConnected ? `Purchase saved to database. ${quantity} ${item.unit} added to inventory.` : `Purchase saved locally. ${quantity} ${item.unit} added to inventory.`);
   };
   const deletePurchase = (purchase: PurchaseRecord) => {
     const item = inventory.find(entry => entry.id === purchase.inventoryId);
