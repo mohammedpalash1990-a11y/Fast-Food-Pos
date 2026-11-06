@@ -74,12 +74,14 @@ function App() {
     const refreshLiveData = async () => {
       try {
         const headers = { Authorization: `Bearer ${apiToken}` };
-        const [ordersResponse, inventoryResponse, expensesResponse, purchasesResponse, suppliersResponse] = await Promise.all([
+        const [ordersResponse, inventoryResponse, expensesResponse, purchasesResponse, suppliersResponse, employeesResponse, payrollResponse] = await Promise.all([
           fetch(`${apiBase.replace(/\/$/, '')}/api/orders?limit=150`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/inventory`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/expenses`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/purchases`, { headers }),
-          fetch(`${apiBase.replace(/\/$/, '')}/api/suppliers`, { headers })
+          fetch(`${apiBase.replace(/\/$/, '')}/api/suppliers`, { headers }),
+          fetch(`${apiBase.replace(/\/$/, '')}/api/employees`, { headers }),
+          fetch(`${apiBase.replace(/\/$/, '')}/api/payroll`, { headers })
         ]);
         if (!ordersResponse.ok || !inventoryResponse.ok) return;
         const [orderData, inventoryData] = await Promise.all([ordersResponse.json(), inventoryResponse.json()]);
@@ -113,6 +115,25 @@ function App() {
           if (active && Array.isArray(supplierData.suppliers)) setSuppliers(supplierData.suppliers.map((item: {
             id:string;name:string;phone?:string;category?:string;payable:string|number;
           }) => ({id:item.id,name:item.name,phone:item.phone || '',category:item.category || 'General',due:Number(item.payable)})));
+        }
+        if (employeesResponse.ok) {
+          const employeeData = await employeesResponse.json();
+          if (active && Array.isArray(employeeData.employees)) setEmployees(employeeData.employees.map((item: {
+            id:string;name:string;role:string;shift:string;status:'Present'|'Absent'|'On Leave';salary:string|number;advance:string|number;
+          }) => ({id:item.id,name:item.name,role:item.role,shift:item.shift,status:item.status,salary:Number(item.salary),advance:Number(item.advance)})));
+        }
+        if (payrollResponse.ok) {
+          const payrollData = await payrollResponse.json();
+          if (active && Array.isArray(payrollData.payroll)) setPayroll(payrollData.payroll.map((item: {
+            id:string;employeeId:string;employeeName:string;period:string;baseSalary:string|number;bonus:string|number;
+            advanceDeduction:string|number;netSalary:string|number;createdAt:string;
+            payments:Array<{id:string;amount:string|number;paymentMethod:'Cash'|'Mada';date:string;createdAt:string}>;
+          }) => ({
+            id:item.id,employeeId:item.employeeId,employeeName:item.employeeName,period:item.period,
+            baseSalary:Number(item.baseSalary),bonus:Number(item.bonus),advanceDeduction:Number(item.advanceDeduction),
+            netSalary:Number(item.netSalary),createdAt:item.createdAt,
+            payments:item.payments.map(payment=>({id:payment.id,amount:Number(payment.amount),paymentMethod:payment.paymentMethod,date:payment.date,createdAt:payment.createdAt}))
+          })));
         }
         const liveOrders: Order[] = orderData.orders.map((saved: {
           id: string; order_number: number | string; order_type: Order['type']; status: string;
