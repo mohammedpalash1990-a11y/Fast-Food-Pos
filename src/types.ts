@@ -25,6 +25,7 @@ export interface InventoryItem {
   name: string;
   category: string;
   stock: number;
+  trackStock: boolean;
   unit: string;
   reorderLevel: number;
   cost: number;
