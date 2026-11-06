@@ -1,6 +1,11 @@
 import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import { pool } from './db.js';
+if (process.env.NODE_ENV === 'production') {
+  console.log('Production seed skipped; demo fixtures are restricted to local development.');
+  await pool.end();
+  process.exit(0);
+}
 const email = process.env.SEED_ADMIN_EMAIL;
 const password = process.env.SEED_ADMIN_PASSWORD;
 if (!email || !password || password.length < 12) throw new Error('Set SEED_ADMIN_EMAIL and a SEED_ADMIN_PASSWORD of at least 12 characters in .env');
