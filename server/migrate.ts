@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { readFile } from 'node:fs/promises';
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
 import { pool } from './db.js';
 
 const targetUrl = process.env.NEON_DATABASE_URL;
@@ -23,7 +23,17 @@ const getPrimaryKeyColumns = async (client: import('pg').PoolClient, table: stri
 };
 
 if (targetUrl && sourceUrl && targetUrl !== sourceUrl) {
-  const source = new Pool({ connectionString: sourceUrl, max: 2 });
+  const source = new Pool({
+    connectionString: sourceUrl,
+    max: 2,
+    types: {
+      getTypeParser: (oid, format) => {
+        // Preserve PostgreSQL timestamp microseconds; JavaScript Date only retains milliseconds.
+        if (oid === 1114 || oid === 1184) return (value: string) => value;
+        return types.getTypeParser(oid, format);
+      }
+    }
+  });
   let sourceClient: import('pg').PoolClient | undefined;
   let targetClient: import('pg').PoolClient | undefined;
   let sourceTransactionStarted = false;
