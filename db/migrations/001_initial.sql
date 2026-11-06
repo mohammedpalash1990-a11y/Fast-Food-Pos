@@ -24,3 +24,6 @@ CREATE INDEX IF NOT EXISTS payments_customer_idx ON payments(customer_id,created
 CREATE INDEX IF NOT EXISTS purchases_supplier_idx ON purchases(supplier_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS ingredients_branch_reorder_idx ON ingredients(branch_id,stock,reorder_level);
 CREATE INDEX IF NOT EXISTS audit_org_created_idx ON audit_logs(organization_id,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS expenses (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL REFERENCES organizations ON DELETE CASCADE, branch_id uuid NOT NULL REFERENCES branches ON DELETE CASCADE, category text NOT NULL, description text NOT NULL, amount numeric(12,2) NOT NULL CHECK(amount>0), payment_method text NOT NULL CHECK(payment_method IN ('Cash','Mada')), expense_date date NOT NULL DEFAULT CURRENT_DATE, created_by uuid REFERENCES users ON DELETE SET NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS expenses_branch_date_idx ON expenses(branch_id,expense_date DESC,created_at DESC);
