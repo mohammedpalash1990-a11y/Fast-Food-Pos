@@ -21,6 +21,14 @@ In another terminal run `npm run dev`. Vite proxies `/api` requests to `http://l
 
 Seed admin credentials come from `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`. Never commit `.env`; disable/delete the seeded account and provision real users before exposing this service. JWT signing key must be at least 32 characters. Use HTTPS, a strong database password, backups, and a secret manager in deployment.
 
+## Legacy Render-to-Neon data transfer
+
+For a controlled legacy transfer, keep the old Render database URL in `DATABASE_URL` and set the Neon destination URL in `NEON_DATABASE_URL`. The API pool uses Neon when `NEON_DATABASE_URL` is present; the migration reads the old database through `DATABASE_URL`.
+
+The transfer is **dry-run by default**. Run `npm run db:migrate` and review the per-table verification output first. The source connection is read-only, the destination transfer transaction is rolled back, and no legacy rows are committed during this check. The migration stops on unsupported source tables, incompatible primary keys/columns, or unique-key conflicts. Matching primary-key rows are synchronized and verified column-by-column, including NULL values.
+
+Only after reviewing a successful dry run and confirming a backup/recovery path should the operator explicitly set `LEGACY_TRANSFER_COMMIT=true` and run the migration again. Do not delete or overwrite the legacy Render database. Keep the two connection strings separate; never replace the source `DATABASE_URL` with the Neon URL during the transfer.
+
 ## Backend endpoints delivered
 
 - `POST /api/auth/login`, `GET /api/auth/me`: bcrypt password verification, short-lived JWT, active-user reload, login rate limiting.
