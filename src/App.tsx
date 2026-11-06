@@ -80,7 +80,7 @@ function App() {
           fetch(`${apiBase.replace(/\/$/, '')}/api/expenses`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/purchases`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/suppliers`, { headers }),
-          fetch(`${apiBase.replace(/\/$/, '')}/api/employees`, { headers }),
+          fetch(`${apiBase.replace(/\/$/, '')}/api/employees?date=${localDate()}`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/payroll`, { headers })
         ]);
         if (!ordersResponse.ok || !inventoryResponse.ok) return;
