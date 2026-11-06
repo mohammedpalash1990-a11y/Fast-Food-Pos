@@ -42,7 +42,29 @@ CREATE TABLE IF NOT EXISTS payroll_records (
   employee_id uuid NOT NULL REFERENCES employees ON DELETE RESTRICT,
   organization_id uuid NOT NULL REFERENCES organizations ON DELETE CASCADE,
   branch_id uuid NOT NULL REFERENCES branches ON DELETE CASCADE,
-  period text NOT NULL CHECK(period ~ '^\\d{4}-(0[1-9]|1[0-2])$'),
+  period text NOT NULL CHECK(period ~ '^[0-9]{4}-(0[1-9]|1[0-2])),
+  base_salary numeric(12,2) NOT NULL CHECK(base_salary>=0),
+  bonus numeric(12,2) NOT NULL DEFAULT 0 CHECK(bonus>=0),
+  advance_deduction numeric(12,2) NOT NULL DEFAULT 0 CHECK(advance_deduction>=0),
+  net_salary numeric(12,2) NOT NULL CHECK(net_salary>=0),
+  created_by uuid REFERENCES users ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(employee_id,period)
+);
+CREATE TABLE IF NOT EXISTS payroll_payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  payroll_id uuid NOT NULL REFERENCES payroll_records ON DELETE RESTRICT,
+  organization_id uuid NOT NULL REFERENCES organizations ON DELETE CASCADE,
+  branch_id uuid NOT NULL REFERENCES branches ON DELETE CASCADE,
+  amount numeric(12,2) NOT NULL CHECK(amount>0),
+  method text NOT NULL CHECK(method IN ('Cash','Mada')),
+  payment_date date NOT NULL DEFAULT CURRENT_DATE,
+  created_by uuid REFERENCES users ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS payroll_records_branch_period_idx ON payroll_records(branch_id,period DESC);
+CREATE INDEX IF NOT EXISTS payroll_payments_payroll_idx ON payroll_payments(payroll_id,created_at DESC);
+),
   base_salary numeric(12,2) NOT NULL CHECK(base_salary>=0),
   bonus numeric(12,2) NOT NULL DEFAULT 0 CHECK(bonus>=0),
   advance_deduction numeric(12,2) NOT NULL DEFAULT 0 CHECK(advance_deduction>=0),
