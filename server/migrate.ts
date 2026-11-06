@@ -24,8 +24,10 @@ const getPrimaryKeyColumns = async (client: import('pg').PoolClient, table: stri
 
 if (targetUrl && sourceUrl && targetUrl !== sourceUrl) {
   const source = new Pool({ connectionString: sourceUrl, max: 2 });
-  const sourceClient = await source.connect();
-  const targetClient = await pool.connect();
+  let sourceClient: import('pg').PoolClient | undefined;
+  let targetClient: import('pg').PoolClient | undefined;
+  let sourceTransactionStarted = false;
+  let targetTransactionStarted = false;
   const tableOrder = [
     'organizations', 'branches', 'users', 'categories', 'suppliers', 'customers',
     'ingredients', 'products', 'recipes', 'orders', 'order_items', 'payments',
@@ -34,9 +36,15 @@ if (targetUrl && sourceUrl && targetUrl !== sourceUrl) {
   ];
   let synchronized = 0;
   let verified = 0;
+
   try {
+    sourceClient = await source.connect();
+    targetClient = await pool.connect();
     await sourceClient.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    sourceTransactionStarted = true;
     await targetClient.query('BEGIN');
+    targetTransactionStarted = true;
+
     const sourceTables = await sourceClient.query<{table_name:string}>(
       "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'"
     );
@@ -45,17 +53,28 @@ if (targetUrl && sourceUrl && targetUrl !== sourceUrl) {
     );
     const sourceSet = new Set(sourceTables.rows.map(row => row.table_name));
     const targetSet = new Set(targetTables.rows.map(row => row.table_name));
-    const migrationMetadataTables = new Set(['knex_migrations', 'knex_migrations_lock', 'schema_migrations', '_prisma_migrations']);
-    const unsupportedTables = [...sourceSet].filter(table => !tableOrder.includes(table) && !migrationMetadataTables.has(table));
+    const migrationMetadataTables = new Set([
+      'knex_migrations', 'knex_migrations_lock', 'schema_migrations', '_prisma_migrations'
+    ]);
+    const unsupportedTables = [...sourceSet].filter(
+      table => !tableOrder.includes(table) && !migrationMetadataTables.has(table)
+    );
     if (unsupportedTables.length) {
-      throw new Error('Legacy database contains tables that are not covered by the transfer: ' + unsupportedTables.join(', ') + '. No transfer rows were committed.');
+      throw new Error(
+        'Legacy database contains tables not covered by the transfer: ' +
+        unsupportedTables.join(', ') + '. No transfer rows were committed.'
+      );
     }
 
     for (const table of tableOrder) {
       if (!sourceSet.has(table)) continue;
       if (!targetSet.has(table)) {
-        throw new Error(`Target schema is missing source table "${table}". Apply the database migration before transferring data.`);
+        throw new Error(
+          'Target schema is missing source table "' + table +
+          '". Apply the database migration before transferring data.'
+        );
       }
+
       const [sourceColumns, targetColumns, sourceKeys, targetKeys] = await Promise.all([
         sourceClient.query<{column_name:string}>(
           "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 ORDER BY ordinal_position",
@@ -68,82 +87,67 @@ if (targetUrl && sourceUrl && targetUrl !== sourceUrl) {
         getPrimaryKeyColumns(sourceClient, table),
         getPrimaryKeyColumns(targetClient, table)
       ]);
+
       if (!sourceKeys.length || sourceKeys.join('\0') !== targetKeys.join('\0')) {
-        throw new Error(`Primary-key schema mismatch for "${table}". Transfer stopped before commit.`);
+        throw new Error('Primary-key schema mismatch for "' + table + '". Transfer stopped before commit.');
       }
+
       const targetColumnSet = new Set(targetColumns.rows.map(row => row.column_name));
-      const columns = sourceColumns.rows.map(row => row.column_name).filter(name => targetColumnSet.has(name));
-      if (!columns.length || !sourceKeys.every(key => columns.includes(key))) {
-        throw new Error(`No compatible primary-key columns for "${table}". Transfer stopped before commit.`);
+      const missingColumns = sourceColumns.rows
+        .map(row => row.column_name)
+        .filter(column => !targetColumnSet.has(column));
+      if (missingColumns.length) {
+        throw new Error(
+          'Target table "' + table + '" is missing source columns: ' +
+          missingColumns.join(', ') + '. No transfer rows were committed.'
+        );
       }
+
+      const columns = sourceColumns.rows.map(row => row.column_name);
+      if (!columns.length || !sourceKeys.every(key => columns.includes(key))) {
+        throw new Error('No compatible primary-key columns for "' + table + '". Transfer stopped before commit.');
+      }
+
+      const updateColumns = columns.filter(column => !sourceKeys.includes(column));
+      const conflictAction = updateColumns.length
+        ? 'DO UPDATE SET ' + updateColumns
+          .map(column => quote(column) + '=EXCLUDED.' + quote(column))
+          .join(',')
+        : 'DO NOTHING';
 
       let offset = 0;
       let tableVerified = 0;
+
       while (true) {
         const result = await sourceClient.query(
-          'SELECT ' + columns.map(quote).join(',') + ' FROM ' + quote('public') + '.' + quote(table) +
-            ' ORDER BY ' + columns.map(quote).join(',') + ' LIMIT 300 OFFSET $1',
+          'SELECT ' + columns.map(quote).join(',') +
+          ' FROM ' + quote('public') + '.' + quote(table) +
+          ' ORDER BY ' + sourceKeys.map(quote).join(',') +
+          ' LIMIT 300 OFFSET $1',
           [offset]
         );
         if (!result.rows.length) break;
 
-        const values: unknown[] = [];
-        const tuples = result.rows.map((row: Record<string, unknown>) => {
+        const insertValues: unknown[] = [];
+        const insertTuples = result.rows.map((row: Record<string, unknown>) => {
           const marks = columns.map(column => {
-            values.push(row[column]);
-            return '$' + values.length;
+            insertValues.push(row[column]);
+            return '$' + insertValues.length;
           });
           return '(' + marks.join(',') + ')';
         });
-        const updateColumns = columns.filter(column => !sourceKeys.includes(column));
-        const conflictAction = updateColumns.length
-          ? 'DO UPDATE SET ' + updateColumns.map(column => quote(column) + '=EXCLUDED.' + quote(column)).join(',')
-          : 'DO NOTHING';
+
         const insert = 'INSERT INTO ' + quote('public') + '.' + quote(table) +
-          ' (' + columns.map(quote).join(',') + ') VALUES ' + tuples.join(',') +
+          ' (' + columns.map(quote).join(',') + ') VALUES ' + insertTuples.join(',') +
           ' ON CONFLICT (' + sourceKeys.map(quote).join(',') + ') ' + conflictAction;
-        const inserted = await targetClient.query(insert, values);
+        const inserted = await targetClient.query(insert, insertValues);
         synchronized += inserted.rowCount || 0;
 
-        const incomingValues: unknown[] = [];
-        const incomingTuples = result.rows.map((row: Record<string, unknown>) => {
+        const verifyValues: unknown[] = [];
+        const verifyTuples = result.rows.map((row: Record<string, unknown>) => {
           const marks = columns.map(column => {
-            incomingValues.push(row[column]);
-            return '
-        tableVerified += result.rows.length;
-        offset += result.rows.length;
-        if (result.rows.length < 300) break;
-      }
-      verified += tableVerified;
-      console.log(`Verified ${tableVerified} source rows in ${table}.`);
-    }
-
-    if (commitLegacyTransfer) {
-      await targetClient.query('COMMIT');
-      console.log(`Legacy Render to Neon transfer committed. Rows inserted or synchronized: ${synchronized}; source rows verified: ${verified}.`);
-    } else {
-      await targetClient.query('ROLLBACK');
-      console.log(`Legacy Render to Neon dry run passed. Rows that would be inserted or synchronized: ${synchronized}; source rows verified: ${verified}. Target transaction rolled back. Set LEGACY_TRANSFER_COMMIT=true only when ready to apply the transfer.`);
-    }
-    await sourceClient.query('COMMIT');
-  } catch (error) {
-    await targetClient.query('ROLLBACK');
-    await sourceClient.query('ROLLBACK');
-    throw error;
-  } finally {
-    targetClient.release();
-    sourceClient.release();
-    await source.end();
-  }
-} else {
-  console.log('Legacy transfer skipped: source or Neon connection is not configured.');
-}
-
-const sql = await readFile(new URL('../db/migrations/001_initial.sql', import.meta.url), 'utf8');
-await pool.query(sql);
-console.log('Database migration applied.');
-await pool.end();
- + incomingValues.length;
+            verifyValues.push(row[column]);
+            return '$' + verifyValues.length;
           });
           return '(' + marks.join(',') + ')';
         });
@@ -153,35 +157,57 @@ await pool.end();
         const valueMatch = columns.map(column =>
           'persisted.' + quote(column) + ' IS NOT DISTINCT FROM incoming.' + quote(column)
         ).join(' AND ');
+
         const matched = await targetClient.query<{matched:string}>(
-          'SELECT COUNT(*)::text AS matched FROM (VALUES ' + incomingTuples.join(',') + ') AS incoming(' +
-            columns.map(quote).join(',') + ') JOIN ' + quote('public') + '.' + quote(table) +
-            ' AS persisted ON ' + keyJoin + ' WHERE ' + valueMatch,
-          incomingValues
+          'SELECT COUNT(*)::text AS matched FROM (VALUES ' + verifyTuples.join(',') +
+          ') AS incoming(' + columns.map(quote).join(',') + ') JOIN ' +
+          quote('public') + '.' + quote(table) + ' AS persisted ON ' + keyJoin +
+          ' WHERE ' + valueMatch,
+          verifyValues
         );
         if (Number(matched.rows[0].matched) !== result.rows.length) {
           throw new Error(
-            `Transfer verification failed for "${table}": only ${matched.rows[0].matched} of ${result.rows.length} source rows exactly match Neon after synchronization. No transfer rows were committed.`
+            'Exact data verification failed for "' + table + '": only ' +
+            matched.rows[0].matched + ' of ' + result.rows.length +
+            ' source rows match Neon after synchronization. No transfer rows were committed.'
           );
         }
+
         tableVerified += result.rows.length;
         offset += result.rows.length;
         if (result.rows.length < 300) break;
       }
+
       verified += tableVerified;
-      console.log(`Verified ${tableVerified} source rows in ${table}.`);
+      console.log('Verified ' + tableVerified + ' source rows in ' + table + '.');
     }
 
-    await targetClient.query('COMMIT');
+    if (commitLegacyTransfer) {
+      await targetClient.query('COMMIT');
+      targetTransactionStarted = false;
+      console.log(
+        'Legacy Render to Neon transfer committed. Rows inserted or synchronized: ' +
+        synchronized + '; source rows verified: ' + verified + '.'
+      );
+    } else {
+      await targetClient.query('ROLLBACK');
+      targetTransactionStarted = false;
+      console.log(
+        'Legacy Render to Neon dry run passed. Rows that would be inserted or synchronized: ' +
+        synchronized + '; source rows verified: ' + verified +
+        '. Target transaction rolled back. Set LEGACY_TRANSFER_COMMIT=true only when ready to apply the transfer.'
+      );
+    }
+
     await sourceClient.query('COMMIT');
-    console.log(`Legacy Render to Neon transfer finished. Newly inserted rows: ${copied}; source rows verified: ${verified}.`);
+    sourceTransactionStarted = false;
   } catch (error) {
-    await targetClient.query('ROLLBACK');
-    await sourceClient.query('ROLLBACK');
+    if (targetTransactionStarted && targetClient) await targetClient.query('ROLLBACK');
+    if (sourceTransactionStarted && sourceClient) await sourceClient.query('ROLLBACK');
     throw error;
   } finally {
-    targetClient.release();
-    sourceClient.release();
+    targetClient?.release();
+    sourceClient?.release();
     await source.end();
   }
 } else {
