@@ -523,6 +523,11 @@ function App() {
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Purchase could not be reversed.');
+        if (Array.isArray(result.inventory)) setInventory(current => current.map(entry => {
+          const saved = result.inventory.find((item: { id: string }) => item.id === entry.id);
+          return saved ? { ...entry, stock: Number(saved.stock), trackStock: Boolean(saved.trackStock), cost: Number(saved.unitCost), supplier: saved.supplier || '—' } : entry;
+        }));
+        if (result.supplier) setSuppliers(current => current.map(entry => entry.id === result.supplier.id ? { ...entry, due: Number(result.supplier.payable) } : entry));
       } catch (error) {
         flash(error instanceof Error ? error.message : 'Purchase reversal failed. No local changes were made.');
         return;
