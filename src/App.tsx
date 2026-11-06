@@ -79,13 +79,16 @@ function App() {
           fetch(`${apiBase.replace(/\/$/, '')}/api/inventory`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/expenses`, { headers })
         ]);
-        if (!ordersResponse.ok || !inventoryResponse.ok || !expensesResponse.ok) return;
-        const [orderData, inventoryData, expenseData] = await Promise.all([ordersResponse.json(), inventoryResponse.json(), expensesResponse.json()]);
-        if (!active || !Array.isArray(orderData.orders) || !Array.isArray(inventoryData.items) || !Array.isArray(expenseData.expenses)) return;
-        setExpenses(expenseData.expenses.map((item: {id:string;date:string;category:string;description:string;amount:string|number;paymentMethod:string;createdAt:string}) => ({
-          id:item.id,date:item.date,category:item.category,description:item.description,amount:Number(item.amount),
-          paymentMethod:item.paymentMethod === 'Mada' ? 'Mada' : 'Cash',createdAt:item.createdAt
-        })));
+        if (!ordersResponse.ok || !inventoryResponse.ok) return;
+        const [orderData, inventoryData] = await Promise.all([ordersResponse.json(), inventoryResponse.json()]);
+        if (!active || !Array.isArray(orderData.orders) || !Array.isArray(inventoryData.items)) return;
+        if (expensesResponse.ok) {
+          const expenseData = await expensesResponse.json();
+          if (active && Array.isArray(expenseData.expenses)) setExpenses(expenseData.expenses.map((item: {id:string;date:string;category:string;description:string;amount:string|number;paymentMethod:string;createdAt:string}) => ({
+            id:item.id,date:item.date,category:item.category,description:item.description,amount:Number(item.amount),
+            paymentMethod:item.paymentMethod === 'Mada' ? 'Mada' : 'Cash',createdAt:item.createdAt
+          })));
+        }
         const liveOrders: Order[] = orderData.orders.map((saved: {
           id: string; order_number: number | string; order_type: Order['type']; status: string;
           created_at: string; customer_name: string; subtotal: string | number; tax: string | number;
