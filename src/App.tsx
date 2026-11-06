@@ -481,7 +481,7 @@ function App() {
       paymentMethod = method as PaymentMethod;
     }
     const date = window.prompt('Purchase date (YYYY-MM-DD)', localDate()) || localDate();
-    if (!/^\d{4}-\\d{2}-\\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T00:00:00`).getTime()) || localDate(new Date(`${date}T00:00:00`)) !== date) { flash('Enter a valid purchase date.'); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T00:00:00`).getTime()) || localDate(new Date(`${date}T00:00:00`)) !== date) { flash('Enter a valid purchase date.'); return; }
     const purchase: PurchaseRecord = { id: `purchase-${Date.now()}`, date, supplierId: supplier.id, supplierName: supplier.name, inventoryId: item.id, itemName: item.name, quantity, unit: item.unit, unitCost, total: quantity * unitCost, paymentStatus: paymentStatus as 'Paid' | 'Credit', paymentMethod, createdAt: new Date().toISOString() };
     if (apiConnected && apiToken) {
       try {
