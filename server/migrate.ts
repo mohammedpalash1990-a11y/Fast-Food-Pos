@@ -44,6 +44,11 @@ if (targetUrl && sourceUrl && targetUrl !== sourceUrl) {
     );
     const sourceSet = new Set(sourceTables.rows.map(row => row.table_name));
     const targetSet = new Set(targetTables.rows.map(row => row.table_name));
+    const migrationMetadataTables = new Set(['knex_migrations', 'knex_migrations_lock', 'schema_migrations', '_prisma_migrations']);
+    const unsupportedTables = [...sourceSet].filter(table => !tableOrder.includes(table) && !migrationMetadataTables.has(table));
+    if (unsupportedTables.length) {
+      throw new Error('Legacy database contains tables that are not covered by the transfer: ' + unsupportedTables.join(', ') + '. No transfer rows were committed.');
+    }
 
     for (const table of tableOrder) {
       if (!sourceSet.has(table)) continue;
@@ -89,30 +94,68 @@ if (targetUrl && sourceUrl && targetUrl !== sourceUrl) {
           });
           return '(' + marks.join(',') + ')';
         });
+        const updateColumns = columns.filter(column => !sourceKeys.includes(column));
+        const conflictAction = updateColumns.length
+          ? 'DO UPDATE SET ' + updateColumns.map(column => quote(column) + '=EXCLUDED.' + quote(column)).join(',')
+          : 'DO NOTHING';
         const insert = 'INSERT INTO ' + quote('public') + '.' + quote(table) +
-          ' (' + columns.map(quote).join(',') + ') VALUES ' + tuples.join(',') + ' ON CONFLICT DO NOTHING';
+          ' (' + columns.map(quote).join(',') + ') VALUES ' + tuples.join(',') +
+          ' ON CONFLICT (' + sourceKeys.map(quote).join(',') + ') ' + conflictAction;
         const inserted = await targetClient.query(insert, values);
         copied += inserted.rowCount || 0;
 
-        const keyValues: unknown[] = [];
-        const keyTuples = result.rows.map((row: Record<string, unknown>) => {
-          const marks = sourceKeys.map(column => {
-            keyValues.push(row[column]);
-            return '$' + keyValues.length;
+        const incomingValues: unknown[] = [];
+        const incomingTuples = result.rows.map((row: Record<string, unknown>) => {
+          const marks = columns.map(column => {
+            incomingValues.push(row[column]);
+            return '
+        tableVerified += result.rows.length;
+        offset += result.rows.length;
+        if (result.rows.length < 300) break;
+      }
+      verified += tableVerified;
+      console.log(`Verified ${tableVerified} source rows in ${table}.`);
+    }
+
+    await targetClient.query('COMMIT');
+    await sourceClient.query('COMMIT');
+    console.log(`Legacy Render to Neon transfer finished. Newly inserted rows: ${copied}; source rows verified: ${verified}.`);
+  } catch (error) {
+    await targetClient.query('ROLLBACK');
+    await sourceClient.query('ROLLBACK');
+    throw error;
+  } finally {
+    targetClient.release();
+    sourceClient.release();
+    await source.end();
+  }
+} else {
+  console.log('Legacy transfer skipped: source or Neon connection is not configured.');
+}
+
+const sql = await readFile(new URL('../db/migrations/001_initial.sql', import.meta.url), 'utf8');
+await pool.query(sql);
+console.log('Database migration applied.');
+await pool.end();
+ + incomingValues.length;
           });
           return '(' + marks.join(',') + ')';
         });
-        const keyExpression = sourceKeys.length === 1
-          ? quote(sourceKeys[0])
-          : '(' + sourceKeys.map(quote).join(',') + ')';
+        const keyJoin = sourceKeys.map(column =>
+          'persisted.' + quote(column) + '=incoming.' + quote(column)
+        ).join(' AND ');
+        const valueMatch = columns.map(column =>
+          'persisted.' + quote(column) + ' IS NOT DISTINCT FROM incoming.' + quote(column)
+        ).join(' AND ');
         const matched = await targetClient.query<{matched:string}>(
-          'SELECT COUNT(*)::text AS matched FROM ' + quote('public') + '.' + quote(table) +
-            ' WHERE ' + keyExpression + ' IN (VALUES ' + keyTuples.join(',') + ')',
-          keyValues
+          'SELECT COUNT(*)::text AS matched FROM (VALUES ' + incomingTuples.join(',') + ') AS incoming(' +
+            columns.map(quote).join(',') + ') JOIN ' + quote('public') + '.' + quote(table) +
+            ' AS persisted ON ' + keyJoin + ' WHERE ' + valueMatch,
+          incomingValues
         );
         if (Number(matched.rows[0].matched) !== result.rows.length) {
           throw new Error(
-            `Transfer conflict in "${table}": only ${matched.rows[0].matched} of ${result.rows.length} source rows are present in Neon. No transfer rows were committed.`
+            `Transfer verification failed for "${table}": only ${matched.rows[0].matched} of ${result.rows.length} source rows exactly match Neon after synchronization. No transfer rows were committed.`
           );
         }
         tableVerified += result.rows.length;
