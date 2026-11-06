@@ -89,6 +89,7 @@ app.patch('/api/orders/:id/status',authenticate,allow('owner','manager','cashier
     const current=await client.query('SELECT id,order_number,status FROM orders WHERE id=$1 AND branch_id=$2 AND organization_id=$3 FOR UPDATE',[String(req.params.id),req.user!.branchId,req.user!.organizationId]);
     if(!current.rowCount)throw Object.assign(new Error('Order not found in this branch'),{status:404});
     const previousStatus=String(current.rows[0].status);
+    let refundTotal=0;
     if(previousStatus==='Cancelled'&&parsed.data.status!=='Cancelled')throw Object.assign(new Error('A cancelled order cannot be reopened. Create a new order instead.'),{status:409});
     if(previousStatus!=='Cancelled'&&parsed.data.status==='Cancelled'){
       const movements=await client.query("SELECT ingredient_id,SUM(-quantity_delta) AS quantity FROM stock_movements WHERE reference_id=$1 AND movement_type='sale' AND branch_id=$2 GROUP BY ingredient_id",[String(req.params.id),req.user!.branchId]);
@@ -100,7 +101,6 @@ app.patch('/api/orders/:id/status',authenticate,allow('owner','manager','cashier
         }
       }
       const refundable=await client.query("SELECT method,SUM(CASE WHEN direction='in' THEN amount ELSE -amount END) AS balance FROM payments WHERE order_id=$1 GROUP BY method HAVING SUM(CASE WHEN direction='in' THEN amount ELSE -amount END)>0 ORDER BY method",[String(req.params.id)]);
-      let refundTotal=0;
       for(const payment of refundable.rows){
         const refund=Number(payment.balance);
         if(refund<=0)continue;
