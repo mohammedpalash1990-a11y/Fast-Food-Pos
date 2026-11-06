@@ -5,6 +5,7 @@ import { pool } from './db.js';
 
 const targetUrl = process.env.NEON_DATABASE_URL;
 const sourceUrl = process.env.DATABASE_URL;
+const commitLegacyTransfer = process.env.LEGACY_TRANSFER_COMMIT === 'true';
 
 const quote = (value: string) => '"' + value.replace(/"/g, '""') + '"';
 
@@ -31,7 +32,7 @@ if (targetUrl && sourceUrl && targetUrl !== sourceUrl) {
     'purchases', 'purchase_items', 'purchase_payment_allocations',
     'stock_movements', 'audit_logs'
   ];
-  let copied = 0;
+  let synchronized = 0;
   let verified = 0;
   try {
     await sourceClient.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
@@ -102,7 +103,7 @@ if (targetUrl && sourceUrl && targetUrl !== sourceUrl) {
           ' (' + columns.map(quote).join(',') + ') VALUES ' + tuples.join(',') +
           ' ON CONFLICT (' + sourceKeys.map(quote).join(',') + ') ' + conflictAction;
         const inserted = await targetClient.query(insert, values);
-        copied += inserted.rowCount || 0;
+        synchronized += inserted.rowCount || 0;
 
         const incomingValues: unknown[] = [];
         const incomingTuples = result.rows.map((row: Record<string, unknown>) => {
@@ -117,9 +118,14 @@ if (targetUrl && sourceUrl && targetUrl !== sourceUrl) {
       console.log(`Verified ${tableVerified} source rows in ${table}.`);
     }
 
-    await targetClient.query('COMMIT');
+    if (commitLegacyTransfer) {
+      await targetClient.query('COMMIT');
+      console.log(`Legacy Render to Neon transfer committed. Rows inserted or synchronized: ${synchronized}; source rows verified: ${verified}.`);
+    } else {
+      await targetClient.query('ROLLBACK');
+      console.log(`Legacy Render to Neon dry run passed. Rows that would be inserted or synchronized: ${synchronized}; source rows verified: ${verified}. Target transaction rolled back. Set LEGACY_TRANSFER_COMMIT=true only when ready to apply the transfer.`);
+    }
     await sourceClient.query('COMMIT');
-    console.log(`Legacy Render to Neon transfer finished. Newly inserted rows: ${copied}; source rows verified: ${verified}.`);
   } catch (error) {
     await targetClient.query('ROLLBACK');
     await sourceClient.query('ROLLBACK');
