@@ -74,10 +74,12 @@ function App() {
     const refreshLiveData = async () => {
       try {
         const headers = { Authorization: `Bearer ${apiToken}` };
-        const [ordersResponse, inventoryResponse, expensesResponse] = await Promise.all([
+        const [ordersResponse, inventoryResponse, expensesResponse, purchasesResponse, suppliersResponse] = await Promise.all([
           fetch(`${apiBase.replace(/\/$/, '')}/api/orders?limit=150`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/inventory`, { headers }),
-          fetch(`${apiBase.replace(/\/$/, '')}/api/expenses`, { headers })
+          fetch(`${apiBase.replace(/\/$/, '')}/api/expenses`, { headers }),
+          fetch(`${apiBase.replace(/\/$/, '')}/api/purchases`, { headers }),
+          fetch(`${apiBase.replace(/\/$/, '')}/api/suppliers`, { headers })
         ]);
         if (!ordersResponse.ok || !inventoryResponse.ok) return;
         const [orderData, inventoryData] = await Promise.all([ordersResponse.json(), inventoryResponse.json()]);
@@ -88,6 +90,29 @@ function App() {
             id:item.id,date:item.date,category:item.category,description:item.description,amount:Number(item.amount),
             paymentMethod:item.paymentMethod === 'Mada' ? 'Mada' : 'Cash',createdAt:item.createdAt
           })));
+        }
+        if (purchasesResponse.ok) {
+          const purchaseData = await purchasesResponse.json();
+          if (active && Array.isArray(purchaseData.purchases)) setPurchases(purchaseData.purchases.map((item: {
+            id:string;created_at:string;supplier_id:string;supplier_name:string;ingredient_id:string;item_name:string;quantity:string|number;unit:string;
+            unit_cost:string|number;total:string|number;paid:string|number;payment_method?:string;
+          }) => {
+            const amount = Number(item.total);
+            const paidAmount = Number(item.paid);
+            return {
+              id:item.id,date:String(item.created_at).slice(0,10),supplierId:item.supplier_id,supplierName:item.supplier_name,
+              inventoryId:item.ingredient_id,itemName:item.item_name,quantity:Number(item.quantity),unit:item.unit,
+              unitCost:Number(item.unit_cost),total:amount,paid:paidAmount,
+              paymentStatus:paidAmount >= amount ? 'Paid' : paidAmount > 0 ? 'Part-paid' : 'Credit',
+              paymentMethod:item.payment_method === 'Mada' ? 'Mada' : paidAmount > 0 ? 'Cash' : undefined,createdAt:item.created_at
+            } as PurchaseRecord;
+          }));
+        }
+        if (suppliersResponse.ok) {
+          const supplierData = await suppliersResponse.json();
+          if (active && Array.isArray(supplierData.suppliers)) setSuppliers(supplierData.suppliers.map((item: {
+            id:string;name:string;phone?:string;category?:string;payable:string|number;
+          }) => ({id:item.id,name:item.name,phone:item.phone || '',category:item.category || 'General',due:Number(item.payable)})));
         }
         const liveOrders: Order[] = orderData.orders.map((saved: {
           id: string; order_number: number | string; order_type: Order['type']; status: string;
