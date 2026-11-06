@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Activity, ArrowDownRight, ArrowUpRight, BarChart3, Bell, Bike, BookOpen, Boxes, BriefcaseBusiness, CalendarDays, ChefHat, ChevronDown, CircleDollarSign, ClipboardList, Grid2X2, LayoutDashboard, LogOut, Menu, Package, Plus, Printer, Search, Settings, ShoppingBag, ShoppingCart, Sparkles, Table2, Users, Wallet, X } from 'lucide-react';
 import { categories, demoAuditLogs, demoCustomers, demoEmployees, demoInventory, demoOrders, demoProducts, demoSuppliers } from './data/demoData';
-import { type CartItem, type Customer, type Employee, type InventoryItem, type Order, type OrderStatus, type PaymentMethod, type Product } from './types';
+import { type CartItem, type Customer, type Employee, type InventoryItem, type Order, type OrderStatus, type PaymentMethod, type Product, type Supplier } from './types';
 
 const currency = (amount: number) => `SAR ${amount.toLocaleString('en-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const localDate = (date = new Date()) => [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
