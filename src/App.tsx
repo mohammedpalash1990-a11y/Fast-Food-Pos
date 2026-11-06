@@ -685,32 +685,55 @@ function App() {
       <div className="overflow-x-auto"><table className="w-full min-w-[850px] text-left text-sm"><thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="pb-3">Date</th><th className="pb-3">Item</th><th className="pb-3">Supplier</th><th className="pb-3">Quantity</th><th className="pb-3">Unit cost</th><th className="pb-3">Total</th><th className="pb-3">Payment</th><th className="pb-3"/></tr></thead><tbody>{purchases.slice().sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt)).map(item=><tr key={item.id} className="border-t border-white/[.06]"><td className="py-3 text-slate-400">{item.date}</td><td className="py-3 font-medium text-white">{item.itemName}</td><td className="py-3 text-slate-400">{item.supplierName}</td><td className="py-3 text-slate-300">{item.quantity} {item.unit}</td><td className="py-3 text-slate-400">{currency(item.unitCost)}</td><td className="py-3 font-semibold text-white">{currency(item.total)}</td><td className="py-3 text-slate-400">{item.paymentStatus}{item.paymentMethod ? ` · ${item.paymentMethod}` : ''} · Due ${currency(Math.max(0,item.total-item.paid))}</td><td className="py-3 text-right"><button onClick={()=>deletePurchase(item)} className="rounded-lg border border-rose-400/15 px-2.5 py-1.5 text-xs text-rose-300">Reverse</button></td></tr>)}</tbody></table>{!purchases.length&&<p className="py-10 text-center text-sm text-slate-500">No purchases recorded yet. Record a purchase to receive stock.</p>}</div>
     </section>;
   };
-  const addEmployee = () => {
+  const addEmployee = async () => {
     const name = window.prompt('Employee name');
     if (!name?.trim()) return;
     const role = window.prompt('Job role', 'Staff') || 'Staff';
     const shift = window.prompt('Shift', 'Morning') || 'Morning';
     const salary = Number(window.prompt('Monthly salary (SAR)', '2500'));
     if (!Number.isFinite(salary) || salary < 0) { flash('Enter a valid salary amount.'); return; }
-    const employee: Employee = { id: `emp-${Date.now()}`, name: name.trim(), role: role.trim(), shift: shift.trim(), status: 'Present', salary, advance: 0 };
+    let employee: Employee = { id: `emp-${Date.now()}`, name: name.trim(), role: role.trim(), shift: shift.trim(), status: 'Present', salary, advance: 0 };
+    if (apiConnected && apiToken) {
+      try {
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/employees`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`}, body:JSON.stringify({name:employee.name,role:employee.role,shift:employee.shift,salary:employee.salary}) });
+        const result = await response.json();
+        if (!response.ok || !result.employee) throw new Error(result.error || 'Employee could not be saved.');
+        employee = {...employee,...result.employee,salary:Number(result.employee.salary),advance:Number(result.employee.advance||0)};
+      } catch(error) { flash(error instanceof Error ? error.message : 'Employee was not saved.'); return; }
+    }
     setEmployees(current => [employee, ...current]);
     setLogs(current => [{ id: `employee-${Date.now()}`, title: 'Employee added', detail: `${employee.name} · ${employee.role}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
-    flash('Employee added.');
+    flash(apiConnected ? 'Employee saved to PostgreSQL.' : 'Employee added.');
   };
-  const editEmployee = (employee: Employee) => {
+  const editEmployee = async (employee: Employee) => {
     const name = window.prompt('Employee name', employee.name);
     if (!name?.trim()) return;
     const role = window.prompt('Job role', employee.role);
     const shift = window.prompt('Shift', employee.shift);
     const salary = Number(window.prompt('Monthly salary (SAR)', String(employee.salary)));
     if (!Number.isFinite(salary) || salary < 0) { flash('Enter a valid salary amount.'); return; }
-    setEmployees(current => current.map(item => item.id === employee.id ? { ...item, name: name.trim(), role: role?.trim() || item.role, shift: shift?.trim() || item.shift, salary } : item));
+    const updated = { ...employee, name:name.trim(), role:role?.trim() || employee.role, shift:shift?.trim() || employee.shift, salary };
+    if (apiConnected && apiToken) {
+      try {
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/employees/${encodeURIComponent(employee.id)}`, { method:'PATCH', headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`}, body:JSON.stringify({name:updated.name,role:updated.role,shift:updated.shift,salary:updated.salary}) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Employee could not be updated.');
+      } catch(error) { flash(error instanceof Error ? error.message : 'Employee was not updated.'); return; }
+    }
+    setEmployees(current => current.map(item => item.id === employee.id ? updated : item));
     setLogs(current => [{ id: `employee-edit-${Date.now()}`, title: 'Employee details updated', detail: name.trim(), time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
-    flash('Employee details updated.');
+    flash(apiConnected ? 'Employee updated in PostgreSQL.' : 'Employee details updated.');
   };
-  const updateAttendance = (employee: Employee) => {
+  const updateAttendance = async (employee: Employee) => {
     const statuses: Employee['status'][] = ['Present', 'Absent', 'On Leave'];
     const next = statuses[(statuses.indexOf(employee.status) + 1) % statuses.length];
+    if (apiConnected && apiToken) {
+      try {
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/attendance`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`}, body:JSON.stringify({employeeId:employee.id,date:localDate(),status:next}) });
+        const result = await response.json();
+        if (!response.ok || !result.attendance) throw new Error(result.error || 'Attendance was not saved.');
+      } catch(error) { flash(error instanceof Error ? error.message : 'Attendance was not saved.'); return; }
+    }
     setEmployees(current => current.map(item => item.id === employee.id ? { ...item, status: next } : item));
     setLogs(current => [{ id: `attendance-${Date.now()}`, title: 'Attendance updated', detail: `${employee.name} · ${next}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
   };
