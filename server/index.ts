@@ -30,7 +30,8 @@ app.post('/api/tables',authenticate,allow('owner','manager'),asyncRoute(async(re
   const parsed=schema.table.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid table details',details:parsed.error.flatten()});
   const d=parsed.data;
   const table=await inTransaction(async client=>{
-    const inserted=await client.query(`INSERT INTO restaurant_tables(organization_id,branch_id,table_number,seats,notes,created_by) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,table_number,seats,status,notes,created_at,updated_at`,[req.user!.organizationId,req.user!.branchId,d.tableNumber,d.seats,d.notes,req.user!.id]);
+    const inserted=await client.query(`INSERT INTO restaurant_tables(organization_id,branch_id,table_number,seats,notes,created_by) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(branch_id,table_number) DO NOTHING RETURNING id,table_number,seats,status,notes,created_at,updated_at`,[req.user!.organizationId,req.user!.branchId,d.tableNumber,d.seats,d.notes,req.user!.id]);
+    if(!inserted.rowCount)throw Object.assign(new Error('A table with this number already exists in this branch'),{status:409});
     await audit(client,req.user!,'table.created','restaurant_table',inserted.rows[0].id,d);return inserted.rows[0];
   });
   res.status(201).json({table});
