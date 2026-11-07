@@ -13,7 +13,8 @@
     "db:seed": "tsx server/seed.ts",
     "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
     "api:build": "tsc -p tsconfig.server.json",
-    "test": "tsx --test tests/unit/*.test.ts"
+    "test": "tsx --test tests/unit/*.test.ts",
+    "test:integration": "tsx --test tests/integration/*.test.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
