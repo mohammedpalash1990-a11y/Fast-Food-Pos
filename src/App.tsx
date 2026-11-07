@@ -664,7 +664,7 @@ function App() {
     }catch(error){flash(error instanceof Error?error.message:'Delivery update failed.');}
   };
   const deliveryView = (): ReactNode => {
-    const homeOrders=orders.filter(order=>order.type==='Home Delivery'&&order.status!=='Cancelled');
+    const homeOrders=orders.filter(order=>order.type==='Home Delivery');
     const active=deliveries.filter(item=>!['Delivered','Failed'].includes(item.status));
     const history=deliveries.filter(item=>['Delivered','Failed'].includes(item.status));
     return <div className="space-y-4">
