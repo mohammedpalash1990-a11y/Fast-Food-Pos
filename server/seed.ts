@@ -2,8 +2,44 @@ import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import { pool } from './db.js';
 if (process.env.NODE_ENV === 'production') {
-  console.log('Production seed skipped; demo fixtures are restricted to local development.');
-  await pool.end();
+  const email = process.env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
+  const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+  const restaurantName = process.env.BOOTSTRAP_RESTAURANT_NAME?.trim() || 'Musafir Fast Food';
+  const branchName = process.env.BOOTSTRAP_BRANCH_NAME?.trim() || 'Main Branch';
+  if (!email || !password) {
+    console.log('Production bootstrap skipped: set BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD to create the first owner account.');
+    await pool.end();
+    process.exit(0);
+  }
+  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || password.length < 12 || password.length > 128) {
+    throw new Error('BOOTSTRAP_ADMIN_EMAIL must be valid and BOOTSTRAP_ADMIN_PASSWORD must contain 12–128 characters.');
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const slug = 'musafir-production';
+    let org = await client.query<{id:string}>('SELECT id FROM organizations WHERE slug=$1 FOR UPDATE', [slug]);
+    if (!org.rowCount) org = await client.query('INSERT INTO organizations(name,slug) VALUES($1,$2) RETURNING id', [restaurantName,slug]);
+    const organizationId = org.rows[0].id;
+    let branch = await client.query<{id:string}>('SELECT id FROM branches WHERE organization_id=$1 ORDER BY created_at LIMIT 1 FOR UPDATE', [organizationId]);
+    if (!branch.rowCount) branch = await client.query('INSERT INTO branches(organization_id,name,code) VALUES($1,$2,$3) RETURNING id', [organizationId,branchName,'KSA-01']);
+    const branchId = branch.rows[0].id;
+    const existing = await client.query<{id:string}>('SELECT id FROM users WHERE organization_id=$1 AND email=$2', [organizationId,email]);
+    if (!existing.rowCount) {
+      const hash = await bcrypt.hash(password, 12);
+      await client.query("INSERT INTO users(organization_id,branch_id,email,password_hash,display_name,role) VALUES($1,$2,$3,$4,$5,'owner')", [organizationId,branchId,email,hash,'Restaurant Owner']);
+      console.log('Production owner account created for ' + email + '.');
+    } else {
+      console.log('Production owner account already exists; password was not changed.');
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+    await pool.end();
+  }
   process.exit(0);
 }
 const email = process.env.SEED_ADMIN_EMAIL;
