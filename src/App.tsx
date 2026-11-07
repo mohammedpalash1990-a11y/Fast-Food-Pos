@@ -43,6 +43,8 @@ function App() {
   const [expenses, setExpenses] = useState<ExpenseRecord[]>(() => safeRead('musafir-expenses', []));
   const [purchases, setPurchases] = useState<PurchaseRecord[]>(() => safeRead<PurchaseRecord[]>('musafir-purchases', []).map(item => ({ ...item, paid: Number(item.paid ?? (item.paymentStatus === 'Paid' ? item.total : 0)) })));
   const [payroll, setPayroll] = useState<PayrollRecord[]>(() => safeRead('musafir-payroll', []));
+  const [attendanceDate, setAttendanceDate] = useState(() => localDate());
+  const [attendanceRows, setAttendanceRows] = useState<{employeeId:string;name:string;role:string;shift:string;status:Employee['status'] }[]>([]);
   const [logs, setLogs] = useState(() => safeRead('musafir-audit', demoAuditLogs));
   const [reservations, setReservations] = useState<ReservationRecord[]>(() => safeRead('musafir-reservations', []));
   const [restaurantTables, setRestaurantTables] = useState<TableRecord[]>(() => safeRead('musafir-restaurant-tables', []));
@@ -89,6 +91,15 @@ function App() {
   useEffect(() => { save('musafir-purchases', purchases); }, [purchases]);
   useEffect(() => { if (!apiConnected) save('musafir-payroll', payroll); }, [payroll, apiConnected]);
   useEffect(() => { if (!apiConnected) return; try { localStorage.removeItem('musafir-employees'); localStorage.removeItem('musafir-payroll'); } catch { /* Storage may be unavailable. */ } }, [apiConnected]);
+  useEffect(() => {
+    if (!apiConnected || !apiToken || view !== 'attendance' || !canManageHr) return;
+    let active = true;
+    fetch(`${apiBase.replace(/\\/$/, '')}/api/attendance?date=${encodeURIComponent(attendanceDate)}`, { headers: { Authorization: `Bearer ${apiToken}` } })
+      .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Attendance could not be loaded'); return data; })
+      .then(data => { if (active && Array.isArray(data.attendance)) setAttendanceRows(data.attendance.map((row: {employeeId:string;name:string;role:string;shift:string;status:Employee['status']|null}) => ({...row,status:row.status || 'Not marked'}))); })
+      .catch(error => { if (active) flash(error instanceof Error ? error.message : 'Attendance could not be loaded.'); });
+    return () => { active = false; };
+  }, [apiConnected, apiToken, apiBase, view, attendanceDate, canManageHr]);
   const hrRole = apiConnected ? apiRole : 'owner';
   const canManageHr = ['owner', 'manager'].includes(hrRole);
   const canViewPayroll = ['owner', 'manager', 'accountant'].includes(hrRole);
@@ -123,7 +134,7 @@ function App() {
           fetch(`${apiBase.replace(/\/$/, '')}/api/expenses`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/purchases`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/suppliers`, { headers }),
-          fetch(`${apiBase.replace(/\/$/, '')}/api/employees?date=${localDate()}`, { headers }),
+          fetch(`${apiBase.replace(/\/$/, '')}/api/employees?date=${localDate()}&includeInactive=true`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/payroll`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/reservations`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/tables`, { headers }),
@@ -1023,7 +1034,8 @@ function App() {
         if (!response.ok || !result.attendance) throw new Error(result.error || 'Attendance was not saved.');
       } catch(error) { flash(error instanceof Error ? error.message : 'Attendance was not saved.'); return; }
     }
-    setEmployees(current => current.map(item => item.id === employee.id ? { ...item, status: next } : item));
+    if (attendanceDate === localDate()) setEmployees(current => current.map(item => item.id === employee.id ? { ...item, status: next } : item));
+    setAttendanceRows(current => current.map(item => item.employeeId === employee.id ? { ...item, status: next } : item));
     setLogs(current => [{ id: `attendance-${Date.now()}`, title: 'Attendance updated', detail: `${employee.name} · ${next}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
   };
   const employeesView = (): ReactNode => <section className={`${panel} p-5`}>
