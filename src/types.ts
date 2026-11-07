@@ -69,6 +69,7 @@ export interface Order {
   paid: number;
   paymentMethod: PaymentMethod;
   kitchenNote?: string;
+  tableNumber?: string;
 }
 
 export interface Employee {
