@@ -78,6 +78,10 @@ function App() {
   const [backupMessage, setBackupMessage] = useState('');
   const backupInputRef = useRef<HTMLInputElement>(null);
 
+  const hrRole = apiConnected ? apiRole : 'owner';
+  const canManageHr = ['owner', 'manager'].includes(hrRole);
+  const canViewPayroll = ['owner', 'manager', 'accountant'].includes(hrRole);
+
   useEffect(() => { save('musafir-products', products); }, [products]);
   useEffect(() => { save('musafir-menu-categories', menuCategories); }, [menuCategories]);
   useEffect(() => { save('musafir-inactive-products', inactiveMenuProducts); }, [inactiveMenuProducts]);
@@ -94,15 +98,12 @@ function App() {
   useEffect(() => {
     if (!apiConnected || !apiToken || view !== 'attendance' || !canManageHr) return;
     let active = true;
-    fetch(`${apiBase.replace(/\\/$/, '')}/api/attendance?date=${encodeURIComponent(attendanceDate)}`, { headers: { Authorization: `Bearer ${apiToken}` } })
+    fetch(`${apiBase.replace(/\/$/, '')}/api/attendance?date=${encodeURIComponent(attendanceDate)}`, { headers: { Authorization: `Bearer ${apiToken}` } })
       .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Attendance could not be loaded'); return data; })
       .then(data => { if (active && Array.isArray(data.attendance)) setAttendanceRows(data.attendance.map((row: {employeeId:string;name:string;role:string;shift:string;status:Employee['status']|null}) => ({...row,status:row.status || 'Not marked'}))); })
       .catch(error => { if (active) flash(error instanceof Error ? error.message : 'Attendance could not be loaded.'); });
     return () => { active = false; };
   }, [apiConnected, apiToken, apiBase, view, attendanceDate, canManageHr]);
-  const hrRole = apiConnected ? apiRole : 'owner';
-  const canManageHr = ['owner', 'manager'].includes(hrRole);
-  const canViewPayroll = ['owner', 'manager', 'accountant'].includes(hrRole);
   useEffect(() => { save('musafir-audit', logs); }, [logs]);
   useEffect(() => { save('musafir-reservations', reservations); }, [reservations]);
   useEffect(() => { save('musafir-restaurant-tables', restaurantTables); }, [restaurantTables]);
