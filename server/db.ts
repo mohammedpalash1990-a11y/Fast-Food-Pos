@@ -271,8 +271,91 @@ export function initSchema(): void {
   `);
 }
 
+export function bootstrapProductionAdmin(): { bootstrapped: boolean; reason?: string } {
+  initSchema();
+  const email = process.env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
+  const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+  const restaurantName = process.env.BOOTSTRAP_RESTAURANT_NAME?.trim() || 'Musafir Fast Food';
+  const branchName = process.env.BOOTSTRAP_BRANCH_NAME?.trim() || 'Main Branch';
+  const branchCode = process.env.BOOTSTRAP_BRANCH_CODE?.trim().toUpperCase() || 'MAIN-01';
+
+  if (!email || !password) {
+    return {
+      bootstrapped: false,
+      reason: 'BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD are not set'
+    };
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    throw new Error('BOOTSTRAP_ADMIN_EMAIL must be a valid email address');
+  }
+
+  if (password.length < 12 || password.length > 128) {
+    throw new Error('BOOTSTRAP_ADMIN_PASSWORD must contain 12–128 characters');
+  }
+
+  return inTransaction(() => {
+    // Ensure organization / restaurant settings exist with bootstrap custom names if specified
+    const existingSettings = db.prepare('SELECT id FROM settings WHERE id = 1').get();
+    if (!existingSettings) {
+      db.prepare(`
+        INSERT INTO settings (
+          id, restaurant_name, branch_name, branch_code, phone, address, currency, tax_rate, receipt_footer, public_menu_url
+        ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        restaurantName,
+        branchName,
+        branchCode,
+        '+880 1711-000000',
+        'Main Street, City Center',
+        '৳',
+        5,
+        'Thank you for dining with us!',
+        ''
+      );
+    } else if (process.env.BOOTSTRAP_RESTAURANT_NAME || process.env.BOOTSTRAP_BRANCH_NAME || process.env.BOOTSTRAP_BRANCH_CODE) {
+      db.prepare(`
+        UPDATE settings SET
+          restaurant_name = COALESCE(?, restaurant_name),
+          branch_name = COALESCE(?, branch_name),
+          branch_code = COALESCE(?, branch_code)
+        WHERE id = 1
+      `).run(
+        process.env.BOOTSTRAP_RESTAURANT_NAME?.trim() || null,
+        process.env.BOOTSTRAP_BRANCH_NAME?.trim() || null,
+        process.env.BOOTSTRAP_BRANCH_CODE?.trim().toUpperCase() || null
+      );
+    }
+
+    // Check if user already exists
+    const existingUser = db.prepare('SELECT id, email, role FROM users WHERE email = ?').get(email) as Record<string, unknown> | undefined;
+    if (existingUser) {
+      return {
+        bootstrapped: false,
+        reason: `Admin user ${email} already exists; password was not changed`
+      };
+    }
+
+    const hash = bcrypt.hashSync(password, 12);
+    const userId = `u-owner-${Date.now().toString(36)}`;
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO users (id, email, password_hash, display_name, role, active, created_at)
+      VALUES (?, ?, ?, ?, 'owner', 1, ?)
+    `).run(userId, email, hash, 'Restaurant Owner', now);
+
+    return { bootstrapped: true };
+  });
+}
+
 export function ensureSeeded(): void {
   initSchema();
+
+  if (process.env.BOOTSTRAP_ADMIN_EMAIL && process.env.BOOTSTRAP_ADMIN_PASSWORD) {
+    bootstrapProductionAdmin();
+  }
+
   const countRow = db.prepare('SELECT COUNT(*) AS count FROM products').get() as { count: number };
   if (countRow.count > 0) return;
 

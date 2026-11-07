@@ -402,6 +402,58 @@ app.get('/api/bootstrap', (_req, res) => {
   res.json(readAllState());
 });
 
+app.get('/api/settings', (_req, res) => {
+  const state = readAllState();
+  res.json({ settings: state.settings });
+});
+
+app.put('/api/settings', requireAuth, (req: AuthedRequest, res) => {
+  try {
+    if (!req.user || req.user.role !== 'owner') {
+      return res.status(403).json({ error: 'Only owners can update restaurant and branch settings' });
+    }
+    const body = req.body || {};
+    const restaurantName = String(body.restaurantName || '').trim();
+    const branchName = String(body.branchName || '').trim();
+    const branchCode = String(body.branchCode || '').trim().toUpperCase();
+    const phone = String(body.phone || '').trim();
+    const address = String(body.address || '').trim();
+    const currency = String(body.currency || '৳').trim();
+    const taxRate = Math.max(0, Math.min(50, Number(body.taxRate) || 0));
+    const receiptFooter = String(body.receiptFooter || '').trim();
+    const publicMenuUrl = String(body.publicMenuUrl || '').trim();
+
+    if (!restaurantName || !branchName) {
+      return res.status(400).json({ error: 'Restaurant name and branch name are required' });
+    }
+
+    inTransaction(() => {
+      db.prepare(`
+        INSERT OR REPLACE INTO settings (
+          id, restaurant_name, branch_name, branch_code, phone, address, currency, tax_rate, receipt_footer, public_menu_url
+        ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        restaurantName,
+        branchName,
+        branchCode,
+        phone,
+        address,
+        currency,
+        taxRate,
+        receiptFooter,
+        publicMenuUrl
+      );
+      appendAuditLog('Settings updated', `${restaurantName} · ${branchName} (${branchCode})`, req.user?.displayName || 'Owner');
+    });
+
+    const updated = readAllState().settings;
+    res.json({ settings: updated });
+  } catch (error) {
+    console.error('Failed to update settings:', error);
+    res.status(500).json({ error: 'Failed to update settings' });
+  }
+});
+
 app.post('/api/sync', requireAuth, (req: AuthedRequest, res) => {
   try {
     const body = req.body || {};
@@ -799,7 +851,11 @@ app.use((error: Error & { status?: number }, _req: Request, res: Response, _next
   res.status(error.status || 500).json({ error: error.status ? error.message : 'Internal server error' });
 });
 
+export { app };
+
 const port = Number(process.env.PORT || 3001);
-app.listen(port, '0.0.0.0', () => {
-  console.log(`Musafir POS SQLite API listening on http://0.0.0.0:${port}`);
-});
+if (process.env.NODE_ENV !== 'test' && !process.env.TEST_MODE) {
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`Musafir POS SQLite API listening on http://0.0.0.0:${port}`);
+  });
+}
