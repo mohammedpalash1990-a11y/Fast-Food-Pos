@@ -11,7 +11,7 @@ if (process.env.NODE_ENV === 'production') {
     await pool.end();
     process.exit(0);
   }
-  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || password.length < 12 || password.length > 128) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || password.length > 128) {
     throw new Error('BOOTSTRAP_ADMIN_EMAIL must be valid and BOOTSTRAP_ADMIN_PASSWORD must contain 12–128 characters.');
   }
   const client = await pool.connect();
