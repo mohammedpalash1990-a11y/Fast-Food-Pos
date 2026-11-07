@@ -9,6 +9,7 @@ import jwt from 'jsonwebtoken';
 import QRCode from 'qrcode';
 import { z } from 'zod';
 import { pool, inTransaction } from './db.js';
+import { MAX_MONEY, centsToDecimal, computeNetCents, hasAtMostTwoDecimals, isDateNotInFuture, isValidIsoDate, isValidPeriod, payrollStatus, toCents } from './payroll-math.js';
 
 type Role = 'owner'|'manager'|'cashier'|'kitchen'|'inventory'|'accountant'|'delivery';
 type AuthUser = { id:string; organizationId:string; branchId:string; email:string; displayName:string; role:Role };
@@ -276,56 +277,208 @@ app.patch('/api/deliveries/:id/status',authenticate,allow('owner','manager','cas
   });
   res.json({delivery});
 }));
+const hrMoney = z.number().finite().min(0).max(MAX_MONEY).refine(hasAtMostTwoDecimals, { message: 'Use at most 2 decimal places' });
+const hrPositiveMoney = hrMoney.refine(value => value > 0, { message: 'Amount must be greater than zero' });
+const hrDate = z.string().refine(isValidIsoDate, { message: 'Use a real date in YYYY-MM-DD format' });
+const hrPastDate = hrDate.refine(value => isDateNotInFuture(value), { message: 'Date cannot be in the future' });
+const today = () => new Date().toISOString().slice(0, 10);
+const employeeCreateInput = z.object({
+  name: z.string().trim().min(1).max(120),
+  role: z.string().trim().min(1).max(80).default('Staff'),
+  shift: z.string().trim().min(1).max(80).default('Morning'),
+  salary: hrMoney
+});
+const employeeUpdateInput = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  role: z.string().trim().min(1).max(80).optional(),
+  shift: z.string().trim().min(1).max(80).optional(),
+  salary: hrMoney.optional()
+}).strict().refine(value => Object.keys(value).length > 0, { message: 'Nothing to update' });
+
 app.get('/api/employees',authenticate,allow('owner','manager','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const requestedDate=String(req.query.date||new Date().toISOString().slice(0,10));
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate))return res.status(400).json({error:'Invalid attendance date'});
-  const rows=await pool.query(`SELECT e.id,e.name,e.job_role AS role,e.shift,e.monthly_salary AS salary,
-    COALESCE((SELECT a.status FROM employee_attendance a WHERE a.employee_id=e.id AND a.attendance_date=$3::date),'Present') AS status,
-    COALESCE((SELECT SUM(sa.amount-sa.deducted) FROM salary_advances sa WHERE sa.employee_id=e.id),0) AS advance
-    FROM employees e WHERE e.organization_id=$1 AND e.branch_id=$2 AND e.active=true ORDER BY e.name`,[req.user!.organizationId,req.user!.branchId,requestedDate]);
+  const requestedDate=String(req.query.date||today());
+  if(!isValidIsoDate(requestedDate))return res.status(400).json({error:'Invalid attendance date'});
+  const includeInactive=req.query.includeInactive==='true'&&(req.user!.role==='owner'||req.user!.role==='manager');
+  const rows=await pool.query(\`SELECT e.id,e.name,e.job_role AS role,e.shift,e.monthly_salary AS salary,e.active,
+    COALESCE((SELECT a.status FROM employee_attendance a WHERE a.employee_id=e.id AND a.organization_id=e.organization_id AND a.branch_id=e.branch_id AND a.attendance_date=$3::date),'Not marked') AS status,
+    COALESCE((SELECT SUM(sa.amount-sa.deducted) FROM salary_advances sa WHERE sa.employee_id=e.id AND sa.organization_id=e.organization_id AND sa.branch_id=e.branch_id),0) AS advance
+    FROM employees e WHERE e.organization_id=$1 AND e.branch_id=$2 AND ($4::boolean OR e.active=true) ORDER BY e.active DESC,e.name\`,
+    [req.user!.organizationId,req.user!.branchId,requestedDate,includeInactive]);
   res.json({employees:rows.rows});
 }));
 app.post('/api/employees',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const parsed=employeeInput.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid employee data',details:parsed.error.flatten()});
-  const d=parsed.data;const employee=await inTransaction(async client=>{
-    const row=await client.query(`INSERT INTO employees(organization_id,branch_id,name,job_role,shift,monthly_salary,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,name,job_role AS role,shift,monthly_salary AS salary`,[req.user!.organizationId,req.user!.branchId,d.name,d.role,d.shift,d.salary,req.user!.id]);
-    await client.query(`INSERT INTO employee_attendance(employee_id,organization_id,branch_id,attendance_date,status,created_by) VALUES($1,$2,$3,CURRENT_DATE,'Present',$4) ON CONFLICT(employee_id,attendance_date) DO NOTHING`,[row.rows[0].id,req.user!.organizationId,req.user!.branchId,req.user!.id]);
-    await audit(client,req.user!,'employee.created','employee',row.rows[0].id,d);return row.rows[0];
-  });res.status(201).json({employee:{...employee,status:'Present',advance:0}});
+  const parsed=employeeCreateInput.safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Invalid employee data',details:parsed.error.flatten()});
+  const d=parsed.data;
+  const employee=await inTransaction(async client=>{
+    const row=await client.query(\`INSERT INTO employees(organization_id,branch_id,name,job_role,shift,monthly_salary,created_by)
+      VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,name,job_role AS role,shift,monthly_salary AS salary,active\`,
+      [req.user!.organizationId,req.user!.branchId,d.name,d.role,d.shift,centsToDecimal(toCents(d.salary)),req.user!.id]);
+    await audit(client,req.user!,'employee.created','employee',row.rows[0].id,d);
+    return row.rows[0];
+  });
+  res.status(201).json({employee:{...employee,status:'Not marked',advance:0}});
 }));
 app.patch('/api/employees/:id',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const parsed=employeeInput.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid employee data',details:parsed.error.flatten()});const d=parsed.data;
-  const employee=await inTransaction(async client=>{const row=await client.query(`UPDATE employees SET name=$1,job_role=$2,shift=$3,monthly_salary=$4,updated_at=now() WHERE id=$5 AND organization_id=$6 AND branch_id=$7 AND active=true RETURNING id,name,job_role AS role,shift,monthly_salary AS salary`,[d.name,d.role,d.shift,d.salary,String(req.params.id),req.user!.organizationId,req.user!.branchId]);if(!row.rowCount)throw Object.assign(new Error('Employee not found'),{status:404});await audit(client,req.user!,'employee.updated','employee',row.rows[0].id,d);return row.rows[0];});res.json({employee});
-}));
-app.delete('/api/employees/:id',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const result=await inTransaction(async client=>{
-    const employee=await client.query('UPDATE employees SET active=false,updated_at=now() WHERE id=$1 AND organization_id=$2 AND branch_id=$3 AND active=true RETURNING id,name',[String(req.params.id),req.user!.organizationId,req.user!.branchId]);
-    if(!employee.rowCount)throw Object.assign(new Error('Employee not found or already inactive'),{status:404});
-    await audit(client,req.user!,'employee.deactivated','employee',employee.rows[0].id,{name:employee.rows[0].name});
-    return employee.rows[0];
+  const parsed=employeeUpdateInput.safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Invalid employee data',details:parsed.error.flatten()});
+  const d=parsed.data;
+  const employee=await inTransaction(async client=>{
+    const row=await client.query(\`UPDATE employees SET name=COALESCE($1,name),job_role=COALESCE($2,job_role),shift=COALESCE($3,shift),
+      monthly_salary=COALESCE($4::numeric,monthly_salary),updated_at=now()
+      WHERE id=$5 AND organization_id=$6 AND branch_id=$7 AND active=true
+      RETURNING id,name,job_role AS role,shift,monthly_salary AS salary,active\`,
+      [d.name??null,d.role??null,d.shift??null,d.salary===undefined?null:centsToDecimal(toCents(d.salary)),String(req.params.id),req.user!.organizationId,req.user!.branchId]);
+    if(!row.rowCount)throw Object.assign(new Error('Employee not found'),{status:404});
+    await audit(client,req.user!,'employee.updated','employee',row.rows[0].id,d);
+    return row.rows[0];
   });
-  res.json({success:true,employee:result});
+  res.json({employee});
+}));
+const setEmployeeActive=(active:boolean)=>asyncRoute(async(req:AuthedRequest,res:Response)=>{
+  const employee=await inTransaction(async client=>{
+    const row=await client.query(\`UPDATE employees SET active=$1,updated_at=now()
+      WHERE id=$2 AND organization_id=$3 AND branch_id=$4 AND active=$5
+      RETURNING id,name,job_role AS role,shift,monthly_salary AS salary,active\`,
+      [active,String(req.params.id),req.user!.organizationId,req.user!.branchId,!active]);
+    if(!row.rowCount)throw Object.assign(new Error(active?'Inactive employee not found':'Employee not found'),{status:404});
+    const details=await client.query(\`SELECT
+      COALESCE((SELECT SUM(amount-deducted) FROM salary_advances WHERE employee_id=$1 AND organization_id=$2 AND branch_id=$3),0) AS "outstandingAdvance",
+      (SELECT count(*)::int FROM payroll_records p WHERE p.employee_id=$1 AND p.organization_id=$2 AND p.branch_id=$3
+       AND p.net_salary>COALESCE((SELECT SUM(pp.amount) FROM payroll_payments pp WHERE pp.payroll_id=p.id),0)) AS "unpaidPayrollRecords"\`,
+      [row.rows[0].id,req.user!.organizationId,req.user!.branchId]);
+    await audit(client,req.user!,active?'employee.reactivated':'employee.deactivated','employee',row.rows[0].id,details.rows[0]);
+    return {...row.rows[0],...details.rows[0]};
+  });
+  res.json({employee});
+});
+app.post('/api/employees/:id/deactivate',authenticate,allow('owner','manager'),setEmployeeActive(false));
+app.post('/api/employees/:id/reactivate',authenticate,allow('owner','manager'),setEmployeeActive(true));
+app.delete('/api/employees/:id',authenticate,allow('owner','manager'),setEmployeeActive(false));
+
+app.get('/api/attendance',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
+  const date=String(req.query.date||today());
+  if(!isValidIsoDate(date))return res.status(400).json({error:'Invalid attendance date'});
+  const rows=await pool.query(\`SELECT e.id AS "employeeId",e.name,e.job_role AS role,e.shift,a.status,a.attendance_date::text AS date
+    FROM employees e LEFT JOIN employee_attendance a ON a.employee_id=e.id AND a.organization_id=e.organization_id
+      AND a.branch_id=e.branch_id AND a.attendance_date=$3::date
+    WHERE e.organization_id=$1 AND e.branch_id=$2 AND e.active=true ORDER BY e.name\`,
+    [req.user!.organizationId,req.user!.branchId,date]);
+  res.json({attendance:rows.rows,date});
 }));
 app.post('/api/attendance',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const parsed=z.object({employeeId:z.string().uuid(),date:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).default(new Date().toISOString().slice(0,10)),status:z.enum(['Present','Absent','On Leave'])}).safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid attendance record'});const d=parsed.data;
-  const result=await inTransaction(async client=>{const employee=await client.query('SELECT id FROM employees WHERE id=$1 AND organization_id=$2 AND branch_id=$3 AND active=true',[d.employeeId,req.user!.organizationId,req.user!.branchId]);if(!employee.rowCount)throw Object.assign(new Error('Employee not found'),{status:404});const row=await client.query(`INSERT INTO employee_attendance(employee_id,organization_id,branch_id,attendance_date,status,created_by) VALUES($1,$2,$3,$4::date,$5,$6) ON CONFLICT(employee_id,attendance_date) DO UPDATE SET status=EXCLUDED.status,updated_at=now(),created_by=EXCLUDED.created_by RETURNING id,employee_id AS "employeeId",attendance_date::text AS date,status`,[d.employeeId,req.user!.organizationId,req.user!.branchId,d.date,d.status,req.user!.id]);await audit(client,req.user!,'attendance.updated','employee',d.employeeId,d);return row.rows[0];});res.json({attendance:result});
-}));
-app.get('/api/payroll',authenticate,allow('owner','manager','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const rows=await pool.query(`SELECT p.id,p.employee_id AS "employeeId",e.name AS "employeeName",p.period,p.base_salary AS "baseSalary",p.bonus,p.deduction,p.advance_deduction AS "advanceDeduction",p.net_salary AS "netSalary",p.created_at AS "createdAt",
-    COALESCE((SELECT json_agg(json_build_object('id',pp.id,'amount',pp.amount,'paymentMethod',pp.method,'date',pp.payment_date::text,'createdAt',pp.created_at) ORDER BY pp.created_at) FROM payroll_payments pp WHERE pp.payroll_id=p.id),'[]'::json) AS payments
-    FROM payroll_records p JOIN employees e ON e.id=p.employee_id WHERE p.organization_id=$1 AND p.branch_id=$2 ORDER BY p.period DESC,e.name`,[req.user!.organizationId,req.user!.branchId]);res.json({payroll:rows.rows});
+  const parsed=z.object({employeeId:z.string().uuid(),date:hrPastDate.default(today()),status:z.enum(['Present','Absent','On Leave'])}).strict().safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Invalid attendance record',details:parsed.error.flatten()});
+  const d=parsed.data;
+  const attendance=await inTransaction(async client=>{
+    const employee=await client.query('SELECT id FROM employees WHERE id=$1 AND organization_id=$2 AND branch_id=$3 AND active=true',[d.employeeId,req.user!.organizationId,req.user!.branchId]);
+    if(!employee.rowCount)throw Object.assign(new Error('Employee not found'),{status:404});
+    const row=await client.query(\`INSERT INTO employee_attendance(employee_id,organization_id,branch_id,attendance_date,status,created_by)
+      VALUES($1,$2,$3,$4::date,$5,$6)
+      ON CONFLICT(employee_id,attendance_date) DO UPDATE SET status=EXCLUDED.status,updated_at=now(),created_by=EXCLUDED.created_by
+      RETURNING id,employee_id AS "employeeId",attendance_date::text AS date,status\`,
+      [d.employeeId,req.user!.organizationId,req.user!.branchId,d.date,d.status,req.user!.id]);
+    await audit(client,req.user!,'attendance.updated','employee',d.employeeId,d);
+    return row.rows[0];
+  });
+  res.json({attendance});
 }));
 app.post('/api/employees/:id/advances',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const parsed=z.object({amount:z.number().positive().max(10000000),note:z.string().trim().max(300).default('Salary advance')}).safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid salary advance'});const d=parsed.data;
-  const advance=await inTransaction(async client=>{const employee=await client.query('SELECT id FROM employees WHERE id=$1 AND organization_id=$2 AND branch_id=$3 AND active=true',[String(req.params.id),req.user!.organizationId,req.user!.branchId]);if(!employee.rowCount)throw Object.assign(new Error('Employee not found'),{status:404});const row=await client.query(`INSERT INTO salary_advances(employee_id,organization_id,branch_id,amount,note,created_by) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,amount,note,created_at AS "createdAt"`,[String(req.params.id),req.user!.organizationId,req.user!.branchId,d.amount,d.note,req.user!.id]);await audit(client,req.user!,'salary.advance_created','salary_advance',row.rows[0].id,d);return row.rows[0];});res.status(201).json({advance});
+  const parsed=z.object({amount:hrPositiveMoney,note:z.string().trim().max(300).default('Salary advance')}).strict().safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Invalid salary advance',details:parsed.error.flatten()});
+  const d=parsed.data;
+  const advance=await inTransaction(async client=>{
+    const employee=await client.query('SELECT id FROM employees WHERE id=$1 AND organization_id=$2 AND branch_id=$3 AND active=true',[String(req.params.id),req.user!.organizationId,req.user!.branchId]);
+    if(!employee.rowCount)throw Object.assign(new Error('Employee not found'),{status:404});
+    const row=await client.query(\`INSERT INTO salary_advances(employee_id,organization_id,branch_id,amount,note,created_by)
+      VALUES($1,$2,$3,$4,$5,$6) RETURNING id,amount,note,created_at AS "createdAt"\`,
+      [String(req.params.id),req.user!.organizationId,req.user!.branchId,centsToDecimal(toCents(d.amount)),d.note,req.user!.id]);
+    await audit(client,req.user!,'salary.advance_created','salary_advance',row.rows[0].id,d);
+    return row.rows[0];
+  });
+  res.status(201).json({advance});
+}));
+app.get('/api/payroll',authenticate,allow('owner','manager','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{
+  const period=String(req.query.period||'');
+  if(period&&!isValidPeriod(period))return res.status(400).json({error:'Invalid payroll period'});
+  const rows=await pool.query(\`SELECT p.id,p.employee_id AS "employeeId",e.name AS "employeeName",p.period,
+    p.base_salary AS "baseSalary",p.bonus,
+    COALESCE(NULLIF(p.other_deduction,0),p.deduction,0) AS deduction,
+    COALESCE(NULLIF(p.other_deduction,0),p.deduction,0) AS "otherDeduction",
+    p.advance_deduction AS "advanceDeduction",p.deduction_note AS "deductionNote",
+    p.net_salary AS "netSalary",p.created_at AS "createdAt",
+    COALESCE(pay.paid,0) AS paid,p.net_salary-COALESCE(pay.paid,0) AS remaining,
+    CASE WHEN p.net_salary-COALESCE(pay.paid,0)<=0 THEN 'Paid'
+         WHEN COALESCE(pay.paid,0)>0 THEN 'Part-paid' ELSE 'Unpaid' END AS status,
+    COALESCE(pay.payments,'[]'::json) AS payments
+    FROM payroll_records p JOIN employees e ON e.id=p.employee_id
+    LEFT JOIN LATERAL (SELECT SUM(pp.amount) AS paid,
+      json_agg(json_build_object('id',pp.id,'amount',pp.amount,'paymentMethod',pp.method,'date',pp.payment_date::text,'createdAt',pp.created_at)
+      ORDER BY pp.created_at,pp.id) AS payments FROM payroll_payments pp WHERE pp.payroll_id=p.id) pay ON true
+    WHERE p.organization_id=$1 AND p.branch_id=$2 AND ($3='' OR p.period=$3)
+    ORDER BY p.period DESC,e.name\`,
+    [req.user!.organizationId,req.user!.branchId,period]);
+  res.json({payroll:rows.rows});
 }));
 app.post('/api/payroll',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const parsed=z.object({employeeId:z.string().uuid(),period:z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),bonus:z.number().min(0).max(10000000).default(0),deduction:z.number().min(0).max(10000000).default(0),advanceDeduction:z.number().min(0).max(10000000).default(0)}).safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid payroll data'});const d=parsed.data;
-  const record=await inTransaction(async client=>{const employee=await client.query('SELECT id,name,monthly_salary FROM employees WHERE id=$1 AND organization_id=$2 AND branch_id=$3 AND active=true FOR UPDATE',[d.employeeId,req.user!.organizationId,req.user!.branchId]);if(!employee.rowCount)throw Object.assign(new Error('Employee not found'),{status:404});const existing=await client.query('SELECT id FROM payroll_records WHERE employee_id=$1 AND period=$2',[d.employeeId,d.period]);if(existing.rowCount)throw Object.assign(new Error('Payroll already exists for this employee and month'),{status:409});const base=Number(employee.rows[0].monthly_salary),bonus=d.bonus,deduction=d.deduction;const advanceRows=await client.query('SELECT id,amount,deducted FROM salary_advances WHERE employee_id=$1 AND organization_id=$2 AND branch_id=$3 AND amount>deducted ORDER BY created_at,id FOR UPDATE',[d.employeeId,req.user!.organizationId,req.user!.branchId]);const outstanding=advanceRows.rows.reduce((sum,row)=>sum+Number(row.amount)-Number(row.deducted),0);if(d.advanceDeduction>outstanding||deduction+d.advanceDeduction>base+bonus)throw Object.assign(new Error('Advance deduction exceeds the outstanding advance or salary'),{status:400});let remaining=d.advanceDeduction;for(const row of advanceRows.rows){if(remaining<=0)break;const available=Number(row.amount)-Number(row.deducted);const take=Math.min(available,remaining);if(take>0){await client.query('UPDATE salary_advances SET deducted=deducted+$1 WHERE id=$2',[take,row.id]);remaining-=take;}}const net=base+bonus-deduction-d.advanceDeduction;const inserted=await client.query(`INSERT INTO payroll_records(employee_id,organization_id,branch_id,period,base_salary,bonus,deduction,advance_deduction,net_salary,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,employee_id AS "employeeId",period,base_salary AS "baseSalary",bonus,deduction,advance_deduction AS "advanceDeduction",net_salary AS "netSalary",created_at AS "createdAt"`,[d.employeeId,req.user!.organizationId,req.user!.branchId,d.period,base,bonus,deduction,d.advanceDeduction,net,req.user!.id]);await audit(client,req.user!,'payroll.created','payroll',inserted.rows[0].id,{...d,employeeName:employee.rows[0].name,netSalary:net});return {...inserted.rows[0],employeeName:employee.rows[0].name,payments:[]};});res.status(201).json({payroll:record});
+  const parsed=z.object({
+    employeeId:z.string().uuid(),period:z.string().refine(isValidPeriod,{message:'Use YYYY-MM'}),
+    bonus:hrMoney.default(0),advanceDeduction:hrMoney.default(0),
+    otherDeduction:hrMoney.optional(),deduction:hrMoney.optional(),deductionNote:z.string().trim().max(200).default('')
+  }).strict().safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Invalid payroll data',details:parsed.error.flatten()});
+  const d=parsed.data,otherDeduction=d.otherDeduction??d.deduction??0;
+  const record=await inTransaction(async client=>{
+    const employee=await client.query('SELECT id,name,monthly_salary FROM employees WHERE id=$1 AND organization_id=$2 AND branch_id=$3 AND active=true FOR UPDATE',
+      [d.employeeId,req.user!.organizationId,req.user!.branchId]);
+    if(!employee.rowCount)throw Object.assign(new Error('Employee not found'),{status:404});
+    const existing=await client.query('SELECT id FROM payroll_records WHERE employee_id=$1 AND period=$2',[d.employeeId,d.period]);
+    if(existing.rowCount)throw Object.assign(new Error('Payroll already exists for this employee and month'),{status:409});
+    const advances=await client.query('SELECT id,amount,deducted FROM salary_advances WHERE employee_id=$1 AND organization_id=$2 AND branch_id=$3 AND amount>deducted ORDER BY created_at,id FOR UPDATE',
+      [d.employeeId,req.user!.organizationId,req.user!.branchId]);
+    const outstandingCents=advances.rows.reduce((sum,row)=>sum+toCents(row.amount)-toCents(row.deducted),0);
+    const advanceCents=toCents(d.advanceDeduction);
+    if(advanceCents>outstandingCents)throw Object.assign(new Error('Advance deduction exceeds the outstanding advance'),{status:400});
+    const baseCents=toCents(employee.rows[0].monthly_salary),bonusCents=toCents(d.bonus),otherCents=toCents(otherDeduction);
+    const netCents=computeNetCents(Number(employee.rows[0].monthly_salary),d.bonus,d.advanceDeduction,otherDeduction);
+    if(netCents<0)throw Object.assign(new Error('Deductions exceed the available salary'),{status:400});
+    let left=advanceCents;
+    for(const row of advances.rows){
+      if(left<=0)break;
+      const available=toCents(row.amount)-toCents(row.deducted),take=Math.min(available,left);
+      if(take>0){await client.query('UPDATE salary_advances SET deducted=deducted+$1 WHERE id=$2',[centsToDecimal(take),row.id]);left-=take;}
+    }
+    const inserted=await client.query(\`INSERT INTO payroll_records(employee_id,organization_id,branch_id,period,base_salary,bonus,deduction,advance_deduction,other_deduction,deduction_note,net_salary,created_by)
+      VALUES($1,$2,$3,$4,$5,$6,0,$7,$8,$9,$10,$11)
+      RETURNING id,employee_id AS "employeeId",period,base_salary AS "baseSalary",bonus,other_deduction AS "otherDeduction",
+      other_deduction AS deduction,advance_deduction AS "advanceDeduction",deduction_note AS "deductionNote",net_salary AS "netSalary",created_at AS "createdAt"\`,
+      [d.employeeId,req.user!.organizationId,req.user!.branchId,d.period,centsToDecimal(baseCents),centsToDecimal(bonusCents),
+       centsToDecimal(advanceCents),centsToDecimal(otherCents),d.deductionNote,centsToDecimal(netCents),req.user!.id]);
+    await audit(client,req.user!,'payroll.created','payroll',inserted.rows[0].id,{...d,otherDeduction,employeeName:employee.rows[0].name,netSalary:centsToDecimal(netCents)});
+    return {...inserted.rows[0],employeeName:employee.rows[0].name,paid:'0.00',remaining:centsToDecimal(netCents),status:payrollStatus(netCents,0),payments:[]};
+  });
+  res.status(201).json({payroll:record});
 }));
 app.post('/api/payroll/:id/payments',authenticate,allow('owner','manager','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const parsed=z.object({amount:z.number().positive().max(10000000),method:z.enum(['Cash','Mada']),date:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).default(new Date().toISOString().slice(0,10))}).safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid payroll payment'});const d=parsed.data;
-  const payment=await inTransaction(async client=>{const payroll=await client.query('SELECT id,net_salary FROM payroll_records WHERE id=$1 AND organization_id=$2 AND branch_id=$3 FOR UPDATE',[String(req.params.id),req.user!.organizationId,req.user!.branchId]);if(!payroll.rowCount)throw Object.assign(new Error('Payroll record not found'),{status:404});const paid=await client.query('SELECT COALESCE(SUM(amount),0) AS total FROM payroll_payments WHERE payroll_id=$1',[String(req.params.id)]);const remaining=Number(payroll.rows[0].net_salary)-Number(paid.rows[0].total);if(d.amount>remaining)throw Object.assign(new Error('Payment exceeds remaining salary'),{status:400});const row=await client.query(`INSERT INTO payroll_payments(payroll_id,organization_id,branch_id,amount,method,payment_date,created_by) VALUES($1,$2,$3,$4,$5,$6::date,$7) RETURNING id,amount,method AS "paymentMethod",payment_date::text AS date,created_at AS "createdAt"`,[String(req.params.id),req.user!.organizationId,req.user!.branchId,d.amount,d.method,d.date,req.user!.id]);await audit(client,req.user!,'payroll.payment_recorded','payroll',String(req.params.id),row.rows[0]);return row.rows[0];});res.status(201).json({payment});
+  const parsed=z.object({amount:hrPositiveMoney,method:z.enum(['Cash','Mada']),date:hrPastDate.default(today())}).strict().safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Invalid payroll payment',details:parsed.error.flatten()});
+  const d=parsed.data;
+  const payment=await inTransaction(async client=>{
+    const payroll=await client.query('SELECT id,net_salary FROM payroll_records WHERE id=$1 AND organization_id=$2 AND branch_id=$3 FOR UPDATE',
+      [String(req.params.id),req.user!.organizationId,req.user!.branchId]);
+    if(!payroll.rowCount)throw Object.assign(new Error('Payroll record not found'),{status:404});
+    const paid=await client.query('SELECT COALESCE(SUM(amount),0) AS total FROM payroll_payments WHERE payroll_id=$1',[String(req.params.id)]);
+    const remaining=toCents(payroll.rows[0].net_salary)-toCents(paid.rows[0].total);
+    const amount=toCents(d.amount);
+    if(amount>remaining)throw Object.assign(new Error('Payment exceeds remaining salary'),{status:400});
+    const row=await client.query(\`INSERT INTO payroll_payments(payroll_id,organization_id,branch_id,amount,method,payment_date,created_by)
+      VALUES($1,$2,$3,$4,$5,$6::date,$7)
+      RETURNING id,amount,method AS "paymentMethod",payment_date::text AS date,created_at AS "createdAt"\`,
+      [String(req.params.id),req.user!.organizationId,req.user!.branchId,centsToDecimal(amount),d.method,d.date,req.user!.id]);
+    await audit(client,req.user!,'payroll.payment_recorded','payroll',String(req.params.id),row.rows[0]);
+    return row.rows[0];
+  });
+  res.status(201).json({payment});
 }));
 app.use((error:Error&{status?:number},_req:Request,res:Response,_next:NextFunction)=>{console.error(error);res.status(error.status||500).json({error:error.status?error.message:'Internal server error'});});
 const port=Number(process.env.PORT||3001);app.listen(port,()=>console.log(`Musafir API listening on ${port}`));
