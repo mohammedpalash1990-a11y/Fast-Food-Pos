@@ -175,11 +175,13 @@ app.post('/api/suppliers/:id/payments',authenticate,allow('owner','manager','acc
 app.get('/api/orders',authenticate,allow('owner','manager','cashier','kitchen','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{
   const limit=Math.min(Math.max(Number(req.query.limit)||100,1),250);
   const rows=await pool.query(`SELECT o.id,o.order_number,o.order_type,o.status,o.subtotal,o.tax,o.discount,o.total,o.notes,o.created_at,
+    t.table_number,
     COALESCE(c.name,'Walk-in Guest') AS customer_name,
     GREATEST(0,COALESCE((SELECT SUM(CASE WHEN p.direction='in' THEN p.amount ELSE -p.amount END) FROM payments p WHERE p.order_id=o.id),0)) AS paid,
     COALESCE((SELECT p.method FROM payments p WHERE p.order_id=o.id AND p.direction='in' ORDER BY p.created_at DESC LIMIT 1),'Cash') AS payment_method,
     COALESCE((SELECT json_agg(json_build_object('id',oi.id,'productId',oi.product_id,'name',oi.product_name,'qty',oi.quantity,'unitPrice',oi.unit_price,'lineTotal',oi.line_total) ORDER BY oi.id) FROM order_items oi WHERE oi.order_id=o.id),'[]'::json) AS items
     FROM orders o LEFT JOIN customers c ON c.id=o.customer_id
+    LEFT JOIN restaurant_tables t ON t.id=o.table_id AND t.branch_id=o.branch_id
     WHERE o.branch_id=$1
     ORDER BY o.created_at DESC LIMIT $2`,[req.user!.branchId,limit]);
   res.json({orders:rows.rows});
