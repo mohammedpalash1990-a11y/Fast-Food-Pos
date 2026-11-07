@@ -50,7 +50,7 @@ jobs:
         run: |
           nohup npx tsx server/index.ts > api.log 2>&1 &
           echo "API starting"
-      - name: PostgreSQL HR API integration tests
+      - name: PostgreSQL API integration tests
         run: npm run test:integration
       - name: Show API log on failure
         if: failure()
