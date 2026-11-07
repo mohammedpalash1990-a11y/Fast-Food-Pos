@@ -367,7 +367,7 @@ app.get('/api/attendance',authenticate,allow('owner','manager'),asyncRoute(async
   res.json({attendance:rows.rows,date});
 }));
 app.post('/api/attendance',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const parsed=z.object({employeeId:z.string().uuid(),date:hrPastDate.default(today()),status:z.enum(['Present','Absent','On Leave'])}).strict().safeParse(req.body);
+  const parsed=z.object({employeeId:z.string().uuid(),date:hrPastDate.default(() => today()),status:z.enum(['Present','Absent','On Leave'])}).strict().safeParse(req.body);
   if(!parsed.success)return res.status(400).json({error:'Invalid attendance record',details:parsed.error.flatten()});
   const d=parsed.data;
   const attendance=await inTransaction(async client=>{
