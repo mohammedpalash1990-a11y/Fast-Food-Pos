@@ -71,6 +71,7 @@ function App() {
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const orderSubmissionLock = useRef(false);
   const orderIdempotencyKey = useRef('');
+  const orderIdempotencyPayload = useRef('');
   const [apiMessage, setApiMessage] = useState('');
   const [backupMessage, setBackupMessage] = useState('');
   const backupInputRef = useRef<HTMLInputElement>(null);
@@ -279,11 +280,14 @@ function App() {
   const addToCart = (product: Product) => {
     setCart(current => { const exists = current.find(item => item.productId === product.id); return exists ? current.map(item => item.productId === product.id ? { ...item, qty: item.qty + 1 } : item) : [...current, { id: `${product.id}-${Date.now()}`, productId: product.id, name: product.name, price: product.price, qty: 1 }]; });
   };
-  const clearCart = () => { orderIdempotencyKey.current = ''; setCart([]); setDiscount('0'); setNote(''); setSelectedCustomerId(''); setSelectedTableId(''); };
+  const clearCart = () => { orderIdempotencyKey.current = ''; orderIdempotencyPayload.current = ''; setCart([]); setDiscount('0'); setNote(''); setSelectedCustomerId(''); setSelectedTableId(''); };
   const placeOrder = async () => {
     if (orderSubmissionLock.current) return;
     if (!cart.length) { flash('Add at least one menu item first.'); return; }
     if (orderType==='Dine-in' && apiConnected && (!selectedTableId || !restaurantTables.some(table=>table.id===selectedTableId&&['Available','Reserved'].includes(table.status)))) { flash('Select an available restaurant table for this dine-in order.'); return; }
+    const orderPayload = { orderType, tableId: orderType==='Dine-in' ? selectedTableId || null : null, customerId: selectedCustomerId || null, paymentMethod: payMethod, discount: discountAmount, taxRate: 0.15, notes: note, items: cart.map(item => ({ productId: item.productId, quantity: item.qty })) };
+    const payloadFingerprint = JSON.stringify(orderPayload);
+    if (orderIdempotencyPayload.current !== payloadFingerprint) { orderIdempotencyKey.current = ''; orderIdempotencyPayload.current = payloadFingerprint; }
     orderSubmissionLock.current = true;
     if (!orderIdempotencyKey.current) orderIdempotencyKey.current = crypto.randomUUID();
     setIsSubmittingOrder(true);
@@ -292,16 +296,7 @@ function App() {
         const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/orders`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiToken}`, 'Idempotency-Key': orderIdempotencyKey.current },
-          body: JSON.stringify({
-            orderType,
-            tableId: orderType==='Dine-in' ? selectedTableId || null : null,
-            customerId: selectedCustomerId || null,
-            paymentMethod: payMethod,
-            discount: discountAmount,
-            taxRate: 0.15,
-            notes: note,
-            items: cart.map(item => ({ productId: item.productId, quantity: item.qty }))
-          })
+          body: JSON.stringify(orderPayload)
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Order could not be saved to the server.');
