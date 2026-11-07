@@ -1141,7 +1141,46 @@ function App() {
       {!visibleCustomers.length && <p className="py-10 text-center text-sm text-slate-500">{customers.length ? 'No customers match this search.' : 'No customers saved yet.'}</p>}
     </section>;
   };
-  const accounting = (): ReactNode => <div className="grid gap-4 xl:grid-cols-2"><section className={`${panel} p-5`}>{heading('Finance','Recorded sales','Figures below are derived from saved order records.') }<div className="mt-5 space-y-4 text-sm"><div className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"><span>Sales today</span><strong className="text-white">{currency(salesToday)}</strong></div><div className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"><span>Recorded order count</span><strong className="text-white">{orders.filter(order=>order.number!=='HOLD').length}</strong></div><div className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"><span>Payments received</span><strong className="text-white">{currency(orders.filter(order=>order.number!=='HOLD').reduce((n,order)=>n+order.paid,0))}</strong></div><div className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"></div><p className="text-xs leading-5 text-amber-200/70">Profit & loss needs recorded purchases and operating expenses; estimates are intentionally not shown as actuals.</p></div></section><section className={`${panel} p-5`}>{<div className="flex items-start justify-between gap-3">{heading('Payables','Supplier balances',apiConnected?'Live supplier balances from the POS database.':'Local supplier records; connect the API for shared balances.') }<button onClick={addSupplier} className="shrink-0 rounded-lg border border-[#e7b943]/40 px-3 py-2 text-xs font-semibold text-[#e7b943]">Add supplier</button></div>}<div className="mt-4 space-y-2">{suppliers.map(supplier=><div key={supplier.id} className="flex items-center justify-between gap-3 rounded-xl bg-white/[.035] p-3"><div className="min-w-0"><div className="text-sm text-white">{supplier.name}</div><div className="mt-1 text-xs text-slate-500">{supplier.category} · {supplier.phone || 'No phone'}</div></div><div className="flex shrink-0 items-center gap-3"><strong className="text-sm text-[#e7b943]">{currency(supplier.due)}</strong><button onClick={()=>editSupplier(supplier)} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-300">Edit</button><button onClick={()=>paySupplier(supplier)} disabled={!apiConnected||supplier.due<=0} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-300 hover:border-[#e7b943]/40 disabled:cursor-not-allowed disabled:opacity-40">Pay</button></div></div>)}</div></section></div>;
+  const accounting = (): ReactNode => {
+    const startDate = reportStartDate(reportRange);
+    const periodOrders = orders.filter(order=>order.number!=='HOLD'&&localDate(new Date(order.createdAt))>=startDate);
+    const periodExpenses = expenses.filter(item=>item.date>=startDate);
+    const periodPurchases = purchases.filter(item=>item.date>=startDate);
+    const periodPayroll = payroll.filter(record=>record.period>=startDate.slice(0,7));
+    const sales = periodOrders.reduce((sum,order)=>sum+order.total,0);
+    const collected = periodOrders.reduce((sum,order)=>sum+order.paid,0);
+    const cashCollected = periodOrders.filter(order=>order.paymentMethod==='Cash').reduce((sum,order)=>sum+order.paid,0);
+    const madaCollected = periodOrders.filter(order=>order.paymentMethod==='Mada').reduce((sum,order)=>sum+order.paid,0);
+    const expenseTotal = periodExpenses.reduce((sum,item)=>sum+item.amount,0);
+    const purchaseTotal = periodPurchases.reduce((sum,item)=>sum+item.total,0);
+    const purchasePayments = periodPurchases.reduce((sum,item)=>sum+item.paid,0);
+    const salaryPaid = periodPayroll.flatMap(record=>record.payments).filter(payment=>payment.date>=startDate).reduce((sum,payment)=>sum+payment.amount,0);
+    const salaryDue = periodPayroll.reduce((sum,record)=>sum+Math.max(0,record.netSalary-record.payments.reduce((paid,payment)=>paid+payment.amount,0)),0);
+    const supplierDue = suppliers.reduce((sum,supplier)=>sum+Math.max(0,supplier.due),0);
+    const operatingOutflow = expenseTotal+salaryPaid+purchasePayments;
+    const netCashMovement = collected-operatingOutflow;
+    const metric = (label:string,value:number,detail?:string) => <div className="rounded-xl border border-white/[.06] bg-white/[.025] p-4"><div className="text-xs text-slate-400">{label}</div><div className="mt-2 text-xl font-semibold text-white">{currency(value)}</div>{detail&&<div className="mt-1 text-[10px] text-slate-500">{detail}</div>}</div>;
+    return <div className="space-y-4">
+      <section className={`${panel} p-5`}>
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Finance control','Accounting overview','Track recorded money received, recorded outflows, supplier balances and payroll liabilities. This is a management cash view, not a statutory ledger.') }<select value={reportRange} onChange={event=>setReportRange(event.target.value)} className="rounded-xl border border-white/10 bg-[#171d22] px-3 py-2 text-xs text-slate-200"><option>Today</option><option>Last 7 days</option><option>This month</option><option>All time</option></select></div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {metric('Sales recorded',sales,`${periodOrders.length} orders · including recorded VAT`)}
+          {metric('Payments received',collected,'Based on order payment records')}
+          {metric('Recorded cash outflow',operatingOutflow,'Expense + salary paid + purchase payments')}
+          {metric('Net cash movement',netCashMovement,'Collected payments less recorded outflows')}
+        </div>
+      </section>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <section className={`${panel} p-5`}>{heading('Payment channels','Collected by method','Order payment method totals for the selected period.')}<div className="mt-4 space-y-3 text-sm">{[{label:'Cash received',value:cashCollected},{label:'Mada received',value:madaCollected},{label:'Total collected',value:collected}].map(row=><div key={row.label} className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"><span>{row.label}</span><strong className="text-white">{currency(row.value)}</strong></div>)}</div></section>
+        <section className={`${panel} p-5`}>{heading('Recorded outflows','Cash movement breakdown','Purchases are shown as payments made, not treated as operating expenses.')}<div className="mt-4 space-y-3 text-sm">{[{label:'Operating expenses',value:expenseTotal},{label:'Salary payments',value:salaryPaid},{label:'Purchase payments',value:purchasePayments},{label:'Total recorded outflow',value:operatingOutflow}].map(row=><div key={row.label} className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"><span>{row.label}</span><strong className="text-white">{currency(row.value)}</strong></div>)}</div></section>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <section className={`${panel} p-5`}>{heading('Outstanding balances','Supplier payables','Current branch supplier balances, independent of the selected reporting period.')}<div className="mt-4 space-y-2">{suppliers.slice().sort((a,b)=>b.due-a.due).map(supplier=><div key={supplier.id} className="flex items-center justify-between gap-3 rounded-xl bg-white/[.035] p-3"><div className="min-w-0"><div className="text-sm text-white">{supplier.name}</div><div className="mt-1 text-xs text-slate-500">{supplier.phone||'No phone recorded'}</div></div><strong className="shrink-0 text-sm text-amber-200">{currency(Math.max(0,supplier.due))}</strong></div>)}{!suppliers.length&&<p className="py-5 text-center text-xs text-slate-500">No suppliers recorded.</p>}<div className="flex justify-between border-t border-white/[.06] pt-3 text-sm"><strong className="text-slate-300">Total supplier balance</strong><strong className="text-[#e7b943]">{currency(supplierDue)}</strong></div></div></section>
+        <section className={`${panel} p-5`}>{heading('Team liabilities','Payroll and procurement','Selected period totals; salary outstanding is calculated for payroll records in the selected months.')}<div className="mt-4 space-y-3 text-sm">{[{label:'Salary paid in period',value:salaryPaid},{label:'Salary outstanding',value:salaryDue},{label:'Purchase value received',value:purchaseTotal},{label:'Purchase payments made',value:purchasePayments}].map(row=><div key={row.label} className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"><span>{row.label}</span><strong className="text-white">{currency(row.value)}</strong></div>)}</div></section>
+      </div>
+      <p className="rounded-xl border border-amber-300/15 bg-amber-300/[.04] p-4 text-xs leading-5 text-amber-100/70">This overview is based on recorded order payments, expenses, payroll payments and purchase payments. It does not reconcile cash drawer opening/closing balances, refunds, bank settlements, VAT filings or inventory valuation. Supplier balances are current balances and are not historical as-of-period balances.</p>
+    </div>;
+  };
   const reportStartDate = (range: string): string => {
     const now = new Date();
     if (range === 'Today') return localDate(now);
