@@ -1044,12 +1044,18 @@ function App() {
   const addMenuProduct = async () => {
     const name=window.prompt('Product name');
     if(!name?.trim())return;
-    const price=Number(window.prompt('Selling price (SAR)','0'));
-    if(!Number.isFinite(price)||price<0){flash('Enter a valid product price.');return;}
-    const categoryName=window.prompt(`Category: ${menuCategories.map(item=>item.name).join(', ')}`,menuCategories[0]?.name||'Snacks')||'Snacks';
+    const priceInput=window.prompt('Selling price (SAR)','0');
+    if(priceInput===null)return;
+    const price=Number(priceInput);
+    if(!priceInput.trim()||!Number.isFinite(price)||price<0){flash('Enter a valid product price.');return;}
+    if(!menuCategories.length){flash('Create a category before adding a product.');return;}
+    const categoryInput=window.prompt(`Category: ${menuCategories.map(item=>item.name).join(', ')}`,menuCategories[0].name);
+    if(categoryInput===null)return;
+    const selected=menuCategories.find(item=>item.name.toLowerCase()===categoryInput.trim().toLowerCase());
+    if(!selected){flash('Choose an existing category from the list.');return;}
+    const categoryName=selected.name;
     const image=window.prompt('Product image URL (optional)','')||'';
     const sku=(`MENU-${Date.now()}`).slice(-40);
-    const selected=menuCategories.find(item=>item.name.toLowerCase()===categoryName.trim().toLowerCase());
     let product:Product={id:`product-${Date.now()}`,name:name.trim(),category:categoryName.trim() as Product['category'],price,image,popularity:0,recipe:[]};
     if(apiConnected && apiToken) {
       try {
@@ -1065,11 +1071,18 @@ function App() {
   const editMenuProduct = async (product:Product) => {
     const name=window.prompt('Product name',product.name);
     if(!name?.trim())return;
-    const price=Number(window.prompt('Selling price (SAR)',String(product.price)));
-    if(!Number.isFinite(price)||price<0){flash('Enter a valid product price.');return;}
-    const categoryName=window.prompt(`Category: ${menuCategories.map(item=>item.name).join(', ')}`,product.category)||product.category;
-    const image=window.prompt('Product image URL',product.image)||'';
-    const selected=menuCategories.find(item=>item.name.toLowerCase()===categoryName.trim().toLowerCase());
+    const priceInput=window.prompt('Selling price (SAR)',String(product.price));
+    if(priceInput===null)return;
+    const price=Number(priceInput);
+    if(!priceInput.trim()||!Number.isFinite(price)||price<0){flash('Enter a valid product price.');return;}
+    const categoryInput=window.prompt(`Category: ${menuCategories.map(item=>item.name).join(', ')}`,product.category);
+    if(categoryInput===null)return;
+    const selected=menuCategories.find(item=>item.name.toLowerCase()===categoryInput.trim().toLowerCase());
+    if(!selected){flash('Choose an existing category from the list.');return;}
+    const categoryName=selected.name;
+    const imageInput=window.prompt('Product image URL',product.image);
+    if(imageInput===null)return;
+    const image=imageInput.trim();
     if(apiConnected && apiToken) {
       try {
         const response=await fetch(`${apiBase.replace(/\/$/, '')}/api/products/${encodeURIComponent(product.id)}`,{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({name:name.trim(),price,categoryId:selected?.id||null,imageUrl:image})});
