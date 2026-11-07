@@ -31,6 +31,9 @@ jobs:
       PORT: "3001"
       CORS_ORIGIN: http://localhost:5173
       API_URL: http://localhost:3001
+      # The transfer suite creates scratch databases on the same server.
+      LEGACY_TEST_DATABASE_URL: postgresql://musafir:ci-only-password@localhost:5432/musafir_ci
+      NEON_TEST_DATABASE_URL: postgresql://musafir:ci-only-password@localhost:5432/musafir_ci
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -42,7 +45,7 @@ jobs:
         run: npm install
       - name: Type-check frontend, API, and build production assets
         run: npm run build
-      - name: Unit tests
+      - name: Unit tests (including transfer safety rules)
         run: npm test
       - name: Apply database migrations
         run: npm run db:migrate
@@ -50,7 +53,7 @@ jobs:
         run: |
           nohup npx tsx server/index.ts > api.log 2>&1 &
           echo "API starting"
-      - name: PostgreSQL HR API integration tests
+      - name: PostgreSQL integration tests (HR API + legacy transfer)
         run: npm run test:integration
       - name: Show API log on failure
         if: failure()
