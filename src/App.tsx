@@ -192,7 +192,7 @@ function App() {
         }
         const liveOrders: Order[] = orderData.orders.map((saved: {
           id: string; order_number: number | string; order_type: Order['type']; status: string;
-          created_at: string; customer_name: string; subtotal: string | number; tax: string | number;
+          created_at: string; customer_name: string; table_number?: string | null; subtotal: string | number; tax: string | number;
           discount: string | number; total: string | number; paid: string | number;
           payment_method: string; notes?: string;
           items: Array<{ id: string; productId: string | null; name: string; qty: number; unitPrice: string | number }>;
@@ -203,6 +203,7 @@ function App() {
           status: saved.status as OrderStatus,
           createdAt: saved.created_at,
           customerName: saved.customer_name,
+          tableNumber: saved.table_number || undefined,
           subtotal: Number(saved.subtotal),
           tax: Number(saved.tax),
           discount: Number(saved.discount),
