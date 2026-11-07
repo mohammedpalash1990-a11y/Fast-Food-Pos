@@ -405,8 +405,8 @@ function App() {
     } finally { setApiBusy(false); }
   };
   const disconnectBackend = () => {
-    saveSession('musafir-api-token', ''); saveSession('musafir-api-branch', '');
-    setApiToken(''); setApiBranchId(''); setApiConnected(false); setProducts(demoProducts);
+    saveSession('musafir-api-token', ''); saveSession('musafir-api-branch', ''); saveSession('musafir-api-role', '');
+    setApiToken(''); setApiBranchId(''); setApiRole(''); setApiConnected(false); setProducts(demoProducts);
     setApiMessage('Disconnected. POS is using local demo data.');
   };
   const exportBackup = () => {
