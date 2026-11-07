@@ -72,7 +72,7 @@ if (targetUrl && sourceUrl && targetUrl !== sourceUrl) {
     'ingredients', 'products', 'recipes', 'orders', 'order_items', 'payments',
     'purchases', 'purchase_items', 'purchase_payment_allocations',
     'stock_movements', 'audit_logs', 'expenses', 'employees',
-    'employee_attendance', 'salary_advances', 'payroll_records', 'payroll_payments', 'reservations'
+    'employee_attendance', 'salary_advances', 'payroll_records', 'payroll_payments', 'reservations', 'restaurant_tables'
   ];
   let synchronized = 0;
   let verified = 0;
