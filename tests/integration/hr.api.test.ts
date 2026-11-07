@@ -3,6 +3,7 @@ import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
 
 const API = (process.env.API_URL || 'http://localhost:3001').replace(/\/$/, '');
@@ -29,13 +30,12 @@ const num = (value: unknown) => Number(value);
 async function createUser(key: string, organizationId: string, branchId: string, role: string) {
   const hash = await bcrypt.hash(PASSWORD, 4);
   const email = key + '-' + suffix + '@it.local';
-  await db.query(
-    'INSERT INTO users(organization_id, branch_id, email, password_hash, display_name, role) VALUES($1, $2, $3, $4, $5, $6)',
+  const inserted = await db.query(
+    'INSERT INTO users(organization_id, branch_id, email, password_hash, display_name, role) VALUES($1, $2, $3, $4, $5, $6) RETURNING id',
     [organizationId, branchId, email, hash, key, role]
   );
-  const login = await call('POST', '/api/auth/login', undefined, { email, password: PASSWORD });
-  assert.equal(login.status, 200, 'login ' + key);
-  tokens[key] = login.body.token;
+  assert.equal(await bcrypt.compare(PASSWORD, hash), true);
+  tokens[key] = jwt.sign({ sub: inserted.rows[0].id }, process.env.JWT_SECRET!, { expiresIn: '8h', issuer: 'musafir-pos' });
 }
 
 before(async () => {
