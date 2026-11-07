@@ -26,7 +26,7 @@ type DeliveryDriver = { id:string; display_name:string };
 type ExpenseRecord = { id: string; date: string; category: string; description: string; amount: number; paymentMethod: PaymentMethod; createdAt: string };
 type PurchaseRecord = { id: string; date: string; supplierId: string; supplierName: string; inventoryId: string; itemName: string; quantity: number; unit: string; unitCost: number; total: number; paid: number; paymentStatus: 'Paid' | 'Part-paid' | 'Credit'; paymentMethod?: PaymentMethod; createdAt: string };
 type PayrollPayment = { id: string; amount: number; paymentMethod: PaymentMethod; date: string; createdAt: string };
-type PayrollRecord = { id: string; employeeId: string; employeeName: string; period: string; baseSalary: number; bonus: number; deduction: number; advanceDeduction: number; netSalary: number; payments: PayrollPayment[]; createdAt: string };
+type PayrollRecord = { id: string; employeeId: string; employeeName: string; period: string; baseSalary: number; bonus: number; deduction: number; otherDeduction?: number; deductionNote?: string; advanceDeduction: number; netSalary: number; payments: PayrollPayment[]; createdAt: string };
 
 function App() {
   const [view, setView] = useState('dashboard');
@@ -38,11 +38,13 @@ function App() {
   const [customers, setCustomers] = useState<Customer[]>(() => safeRead('musafir-customers', demoCustomers));
   const [orders, setOrders] = useState<Order[]>(() => safeRead('musafir-orders', demoOrders));
   const [cart, setCart] = useState<CartItem[]>(() => safeRead('musafir-cart', []));
-  const [employees, setEmployees] = useState(() => safeRead('musafir-employees', demoEmployees));
+  const [employees, setEmployees] = useState<Employee[]>(() => safeRead('musafir-employees', demoEmployees));
   const [suppliers, setSuppliers] = useState(() => safeRead('musafir-suppliers', demoSuppliers));
   const [expenses, setExpenses] = useState<ExpenseRecord[]>(() => safeRead('musafir-expenses', []));
   const [purchases, setPurchases] = useState<PurchaseRecord[]>(() => safeRead<PurchaseRecord[]>('musafir-purchases', []).map(item => ({ ...item, paid: Number(item.paid ?? (item.paymentStatus === 'Paid' ? item.total : 0)) })));
   const [payroll, setPayroll] = useState<PayrollRecord[]>(() => safeRead('musafir-payroll', []));
+  const [attendanceDate, setAttendanceDate] = useState(() => localDate());
+  const [attendanceRows, setAttendanceRows] = useState<{employeeId:string;name:string;role:string;shift:string;status:Employee['status'] }[]>([]);
   const [logs, setLogs] = useState(() => safeRead('musafir-audit', demoAuditLogs));
   const [reservations, setReservations] = useState<ReservationRecord[]>(() => safeRead('musafir-reservations', []));
   const [restaurantTables, setRestaurantTables] = useState<TableRecord[]>(() => safeRead('musafir-restaurant-tables', []));
@@ -76,6 +78,10 @@ function App() {
   const [backupMessage, setBackupMessage] = useState('');
   const backupInputRef = useRef<HTMLInputElement>(null);
 
+  const hrRole = apiConnected ? apiRole : 'owner';
+  const canManageHr = ['owner', 'manager'].includes(hrRole);
+  const canViewPayroll = ['owner', 'manager', 'accountant'].includes(hrRole);
+
   useEffect(() => { save('musafir-products', products); }, [products]);
   useEffect(() => { save('musafir-menu-categories', menuCategories); }, [menuCategories]);
   useEffect(() => { save('musafir-inactive-products', inactiveMenuProducts); }, [inactiveMenuProducts]);
@@ -83,11 +89,21 @@ function App() {
   useEffect(() => { save('musafir-customers', customers); }, [customers]);
   useEffect(() => { save('musafir-orders', orders); }, [orders]);
   useEffect(() => { save('musafir-cart', cart); }, [cart]);
-  useEffect(() => { save('musafir-employees', employees); }, [employees]);
+  useEffect(() => { if (!apiConnected) save('musafir-employees', employees); }, [employees, apiConnected]);
   useEffect(() => { save('musafir-suppliers', suppliers); }, [suppliers]);
   useEffect(() => { save('musafir-expenses', expenses); }, [expenses]);
   useEffect(() => { save('musafir-purchases', purchases); }, [purchases]);
-  useEffect(() => { save('musafir-payroll', payroll); }, [payroll]);
+  useEffect(() => { if (!apiConnected) save('musafir-payroll', payroll); }, [payroll, apiConnected]);
+  useEffect(() => { if (!apiConnected) return; try { localStorage.removeItem('musafir-employees'); localStorage.removeItem('musafir-payroll'); } catch { /* Storage may be unavailable. */ } }, [apiConnected]);
+  useEffect(() => {
+    if (!apiConnected || !apiToken || view !== 'attendance' || !canManageHr) return;
+    let active = true;
+    fetch(`${apiBase.replace(/\/$/, '')}/api/attendance?date=${encodeURIComponent(attendanceDate)}`, { headers: { Authorization: `Bearer ${apiToken}` } })
+      .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Attendance could not be loaded'); return data; })
+      .then(data => { if (active && Array.isArray(data.attendance)) setAttendanceRows(data.attendance.map((row: {employeeId:string;name:string;role:string;shift:string;status:Employee['status']|null}) => ({...row,status:row.status || 'Not marked'}))); })
+      .catch(error => { if (active) flash(error instanceof Error ? error.message : 'Attendance could not be loaded.'); });
+    return () => { active = false; };
+  }, [apiConnected, apiToken, apiBase, view, attendanceDate, canManageHr]);
   useEffect(() => { save('musafir-audit', logs); }, [logs]);
   useEffect(() => { save('musafir-reservations', reservations); }, [reservations]);
   useEffect(() => { save('musafir-restaurant-tables', restaurantTables); }, [restaurantTables]);
@@ -119,7 +135,7 @@ function App() {
           fetch(`${apiBase.replace(/\/$/, '')}/api/expenses`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/purchases`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/suppliers`, { headers }),
-          fetch(`${apiBase.replace(/\/$/, '')}/api/employees?date=${localDate()}`, { headers }),
+          fetch(`${apiBase.replace(/\/$/, '')}/api/employees?date=${localDate()}&includeInactive=true`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/payroll`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/reservations`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/tables`, { headers }),
@@ -161,18 +177,18 @@ function App() {
         if (employeesResponse.ok) {
           const employeeData = await employeesResponse.json();
           if (active && Array.isArray(employeeData.employees)) setEmployees(employeeData.employees.map((item: {
-            id:string;name:string;role:string;shift:string;status:'Present'|'Absent'|'On Leave';salary:string|number;advance:string|number;
-          }) => ({id:item.id,name:item.name,role:item.role,shift:item.shift,status:item.status,salary:Number(item.salary),advance:Number(item.advance)})));
+            id:string;name:string;role:string;shift:string;status:'Present'|'Absent'|'On Leave'|'Not marked';salary:string|number;advance:string|number;active?:boolean;
+          }) => ({id:item.id,name:item.name,role:item.role,shift:item.shift,status:item.status,salary:Number(item.salary),advance:Number(item.advance),active:item.active!==false})));
         }
         if (payrollResponse.ok) {
           const payrollData = await payrollResponse.json();
           if (active && Array.isArray(payrollData.payroll)) setPayroll(payrollData.payroll.map((item: {
-            id:string;employeeId:string;employeeName:string;period:string;baseSalary:string|number;bonus:string|number;deduction:string|number;
+            id:string;employeeId:string;employeeName:string;period:string;baseSalary:string|number;bonus:string|number;deduction?:string|number;otherDeduction?:string|number;deductionNote?:string;
             advanceDeduction:string|number;netSalary:string|number;createdAt:string;
             payments:Array<{id:string;amount:string|number;paymentMethod:'Cash'|'Mada';date:string;createdAt:string}>;
           }) => ({
             id:item.id,employeeId:item.employeeId,employeeName:item.employeeName,period:item.period,
-            baseSalary:Number(item.baseSalary),bonus:Number(item.bonus),deduction:Number(item.deduction??0),advanceDeduction:Number(item.advanceDeduction),
+            baseSalary:Number(item.baseSalary),bonus:Number(item.bonus),deduction:Number(item.otherDeduction??item.deduction??0),otherDeduction:Number(item.otherDeduction??item.deduction??0),deductionNote:item.deductionNote||'',advanceDeduction:Number(item.advanceDeduction),
             netSalary:Number(item.netSalary),createdAt:item.createdAt,
             payments:item.payments.map(payment=>({id:payment.id,amount:Number(payment.amount),paymentMethod:payment.paymentMethod,date:payment.date,createdAt:payment.createdAt}))
           })));
@@ -1009,27 +1025,42 @@ function App() {
     setLogs(current => [{ id: `employee-edit-${Date.now()}`, title: 'Employee details updated', detail: name.trim(), time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
     flash(apiConnected ? 'Employee updated in PostgreSQL.' : 'Employee details updated.');
   };
-  const updateAttendance = async (employee: Employee) => {
+  const updateAttendance = async (employee: Employee, date = localDate()) => {
     const statuses: Employee['status'][] = ['Present', 'Absent', 'On Leave'];
     const next = statuses[(statuses.indexOf(employee.status) + 1) % statuses.length];
     if (apiConnected && apiToken) {
       try {
-        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/attendance`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`}, body:JSON.stringify({employeeId:employee.id,date:localDate(),status:next}) });
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/attendance`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`}, body:JSON.stringify({employeeId:employee.id,date,status:next}) });
         const result = await response.json();
         if (!response.ok || !result.attendance) throw new Error(result.error || 'Attendance was not saved.');
       } catch(error) { flash(error instanceof Error ? error.message : 'Attendance was not saved.'); return; }
     }
-    setEmployees(current => current.map(item => item.id === employee.id ? { ...item, status: next } : item));
+    if (date === localDate()) setEmployees(current => current.map(item => item.id === employee.id ? { ...item, status: next } : item));
+    if (date === attendanceDate) setAttendanceRows(current => current.map(item => item.employeeId === employee.id ? { ...item, status: next } : item));
     setLogs(current => [{ id: `attendance-${Date.now()}`, title: 'Attendance updated', detail: `${employee.name} · ${next}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
   };
+  const changeEmployeeActive = async (employee: Employee, active: boolean) => {
+    const action = active ? 'reactivate' : 'deactivate';
+    if (!active && !window.confirm('Deactivate ' + employee.name + '? Attendance and payroll history will be kept.')) return;
+    if (apiConnected && apiToken) {
+      try {
+        const url = apiBase.replace(/\/$/, '') + '/api/employees/' + encodeURIComponent(employee.id) + '/' + action;
+        const response = await fetch(url, { method:'POST', headers:{Authorization:'Bearer ' + apiToken} });
+        const result = await response.json();
+        if (!response.ok || !result.employee) throw new Error(result.error || 'Employee status could not be updated.');
+      } catch(error) { flash(error instanceof Error ? error.message : 'Employee status could not be updated.'); return; }
+    }
+    setEmployees(current => current.map(item => item.id === employee.id ? { ...item, active } : item));
+    flash(active ? employee.name + ' reactivated.' : employee.name + ' deactivated.');
+  };
   const employeesView = (): ReactNode => <section className={`${panel} p-5`}>
-    <div className="mb-5 flex items-end justify-between gap-3">{heading('Team operations','Employee management','Maintain staff profiles, shifts and attendance status.') }<button onClick={addEmployee} className="rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]">Add employee</button></div>
+    <div className="mb-5 flex items-end justify-between gap-3">{heading('Team operations','Employee management','Maintain staff profiles, shifts and attendance status.') }{canManageHr&&<button onClick={addEmployee} className="rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]">Add employee</button>}</div>
     <div className="mb-4 grid grid-cols-3 gap-2">{[{label:'Present',count:employees.filter(item=>item.status==='Present').length},{label:'Absent',count:employees.filter(item=>item.status==='Absent').length},{label:'On leave',count:employees.filter(item=>item.status==='On Leave').length}].map(item=><div key={item.label} className="rounded-xl bg-white/[.035] p-3"><div className="text-xs text-slate-400">{item.label}</div><div className="mt-1 text-xl font-semibold text-white">{item.count}</div></div>)}</div>
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{employees.map(employee=><article key={employee.id} className="rounded-2xl border border-white/[.07] bg-[#191e24] p-4"><div className="flex items-start justify-between gap-2"><div><h3 className="font-semibold text-white">{employee.name}</h3><p className="mt-1 text-xs text-slate-400">{employee.role} · {employee.shift}</p></div><span className={`rounded-full px-2 py-1 text-[10px] ${employee.status==='Present'?'bg-emerald-400/10 text-emerald-300':employee.status==='Absent'?'bg-rose-400/10 text-rose-300':'bg-amber-400/10 text-amber-200'}`}>{employee.status}</span></div><div className="mt-4 border-t border-white/[.06] pt-3 text-sm"><div className="flex justify-between text-slate-400"><span>Monthly salary</span><strong className="text-white">{currency(employee.salary)}</strong></div><div className="mt-2 flex justify-between text-slate-400"><span>Advance recorded</span><strong className="text-white">{currency(employee.advance)}</strong></div></div><div className="mt-4 flex gap-2"><button onClick={()=>editEmployee(employee)} className="flex-1 rounded-lg border border-white/10 px-2 py-2 text-xs text-slate-300">Edit profile</button><button onClick={()=>updateAttendance(employee)} className="flex-1 rounded-lg border border-[#e7b943]/30 px-2 py-2 text-xs text-[#e7b943]">Update attendance</button></div></article>)}</div>
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{employees.map(employee=><article key={employee.id} className="rounded-2xl border border-white/[.07] bg-[#191e24] p-4"><div className="flex items-start justify-between gap-2"><div><h3 className="font-semibold text-white">{employee.name}</h3><p className="mt-1 text-xs text-slate-400">{employee.role} · {employee.shift}</p></div><span className={`rounded-full px-2 py-1 text-[10px] ${employee.status==='Present'?'bg-emerald-400/10 text-emerald-300':employee.status==='Absent'?'bg-rose-400/10 text-rose-300':'bg-amber-400/10 text-amber-200'}`}>{employee.active===false?'Inactive':employee.status}</span></div><div className="mt-4 border-t border-white/[.06] pt-3 text-sm"><div className="flex justify-between text-slate-400"><span>Monthly salary</span><strong className="text-white">{currency(employee.salary)}</strong></div><div className="mt-2 flex justify-between text-slate-400"><span>Advance recorded</span><strong className="text-white">{currency(employee.advance)}</strong></div></div>{canManageHr&&<div className="mt-4 flex flex-wrap gap-2">{employee.active===false?<button onClick={()=>changeEmployeeActive(employee,true)} className="rounded-lg border border-emerald-400/30 px-3 py-2 text-xs text-emerald-300">Reactivate</button>:<><button onClick={()=>editEmployee(employee)} className="flex-1 rounded-lg border border-white/10 px-2 py-2 text-xs text-slate-300">Edit profile</button><button onClick={()=>updateAttendance(employee)} className="flex-1 rounded-lg border border-[#e7b943]/30 px-2 py-2 text-xs text-[#e7b943]">Update attendance</button><button onClick={()=>changeEmployeeActive(employee,false)} className="rounded-lg border border-rose-400/30 px-3 py-2 text-xs text-rose-300">Deactivate</button></>}</div>}</article>)}</div>
   </section>;
   const attendanceView = (): ReactNode => <section className={`${panel} p-5`}>
-    <div className="mb-5">{heading('Daily operations','Staff attendance','Cycle each employee through Present, Absent and On Leave. Changes are saved locally.')}</div>
-    <div className="space-y-2">{employees.map(employee=><div key={employee.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white/[.035] p-3"><div><div className="text-sm font-medium text-white">{employee.name}</div><div className="mt-1 text-xs text-slate-500">{employee.role} · {employee.shift}</div></div><div className="flex items-center gap-2"><span className="text-xs text-slate-400">{employee.status}</span><button onClick={()=>updateAttendance(employee)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-200">Change status</button></div></div>)}</div>
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Daily operations','Staff attendance',apiConnected?'Choose a date and record one status per employee.':'Cycle each employee through Present, Absent and On Leave.')}{apiConnected&&<input type="date" value={attendanceDate} max={localDate()} onChange={event=>{if(event.target.value)setAttendanceDate(event.target.value);}} className="rounded-lg border border-white/10 bg-transparent px-3 py-2 text-xs text-slate-200"/>}</div>
+    <div className="space-y-2">{(apiConnected?attendanceRows:employees.filter(employee=>employee.active!==false).map(employee=>({employeeId:employee.id,name:employee.name,role:employee.role,shift:employee.shift,status:employee.status}))).map(row=>{const employee=employees.find(item=>item.id===row.employeeId);return <div key={row.employeeId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white/[.035] p-3"><div><div className="text-sm font-medium text-white">{row.name}</div><div className="mt-1 text-xs text-slate-500">{row.role} · {row.shift}</div></div><div className="flex items-center gap-2"><span className="text-xs text-slate-400">{row.status}</span>{canManageHr&&employee&&<button onClick={()=>updateAttendance({...employee,status:row.status},attendanceDate)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-200">Change status</button>}</div></div>;})}</div>
   </section>;
   const recordSalaryAdvance = async (employee: Employee) => {
     const amount = Number(window.prompt(`Advance amount for ${employee.name} (SAR)`, '0'));
@@ -1047,13 +1078,14 @@ function App() {
     flash(apiConnected ? `Advance saved to PostgreSQL for ${employee.name}.` : `Advance recorded for ${employee.name}.`);
   };
   const createPayroll = async () => {
-    if (!employees.length) { flash('Add an employee before creating payroll.'); return; }
+    const activeEmployees = employees.filter(employee => employee.active !== false);
+    if (!activeEmployees.length) { flash('Add an active employee before creating payroll.'); return; }
     const period = window.prompt('Payroll month (YYYY-MM)', localDate().slice(0, 7)) || '';
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) { flash('Enter a valid payroll month in YYYY-MM format.'); return; }
-    const employeeOptions = employees.map((employee, index) => `${index + 1}. ${employee.name} · ${currency(employee.salary)}`).join('\n');
+    const employeeOptions = activeEmployees.map((employee, index) => `${index + 1}. ${employee.name} · ${currency(employee.salary)}`).join('\n');
     const choice = Number(window.prompt(`Select employee:\n${employeeOptions}`, '1'));
-    if (!Number.isInteger(choice) || choice < 1 || choice > employees.length) { flash('Select a valid employee.'); return; }
-    const employee = employees[choice - 1];
+    if (!Number.isInteger(choice) || choice < 1 || choice > activeEmployees.length) { flash('Select a valid employee.'); return; }
+    const employee = activeEmployees[choice - 1];
     if (payroll.some(item => item.employeeId === employee.id && item.period === period)) { flash('Payroll already exists for this employee and month.'); return; }
     const bonus = Number(window.prompt('Bonus (SAR)', '0'));
     if (!Number.isFinite(bonus) || bonus < 0) { flash('Enter a valid bonus amount.'); return; }
@@ -1061,11 +1093,12 @@ function App() {
     if (!Number.isFinite(deduction) || deduction < 0 || deduction > employee.salary + bonus) { flash('Enter a valid deduction amount.'); return; }
     const advanceDeduction = Number(window.prompt(`Outstanding advance: ${currency(employee.advance)}. Deduct how much?`, String(Math.min(employee.advance, employee.salary + bonus - deduction))));
     if (!Number.isFinite(advanceDeduction) || advanceDeduction < 0 || advanceDeduction > employee.advance || deduction + advanceDeduction > employee.salary + bonus) { flash('Total deductions exceed the available salary.'); return; }
+    const deductionNote = deduction > 0 ? (window.prompt('Deduction reason (optional)', '') || '').trim() : '';
     const netSalary = employee.salary + bonus - deduction - advanceDeduction;
-    const record: PayrollRecord = { id: `payroll-${employee.id}-${period}`, employeeId: employee.id, employeeName: employee.name, period, baseSalary: employee.salary, bonus, deduction, advanceDeduction, netSalary, payments: [], createdAt: new Date().toISOString() };
+    const record: PayrollRecord = { id: `payroll-${employee.id}-${period}`, employeeId: employee.id, employeeName: employee.name, period, baseSalary: employee.salary, bonus, deduction, otherDeduction: deduction, deductionNote, advanceDeduction, netSalary, payments: [], createdAt: new Date().toISOString() };
     if (apiConnected && apiToken) {
       try {
-        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/payroll`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`}, body:JSON.stringify({employeeId:employee.id,period,bonus,deduction,advanceDeduction}) });
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/payroll`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`}, body:JSON.stringify({employeeId:employee.id,period,bonus,otherDeduction:deduction,deductionNote,advanceDeduction}) });
         const result = await response.json();
         if (!response.ok || !result.payroll) throw new Error(result.error || 'Payroll could not be created.');
         record.id = result.payroll.id; record.createdAt = result.payroll.createdAt;
@@ -1104,10 +1137,10 @@ function App() {
     const monthRecords = payroll.filter(item => item.period === month);
     return <div className="space-y-4">
       <section className={`${panel} p-5`}>
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Finance & team','Salary & payroll','Create monthly salary records, track advances and record Cash or Mada payments. Connected mode stores team and payroll records in PostgreSQL.')}<button onClick={createPayroll} className="rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]">Create payroll</button></div>
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Finance & team','Salary & payroll','Create monthly salary records, track advances and record Cash or Mada payments. Connected mode stores team and payroll records in PostgreSQL.')}{canManageHr&&<button onClick={createPayroll} className="rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]">Create payroll</button>}</div>
         <div className="mb-5 grid gap-3 sm:grid-cols-3">{[{label:'This month payroll',value:monthRecords.reduce((sum,item)=>sum+item.netSalary,0)},{label:'Salary paid',value:totalPaid},{label:'Salary outstanding',value:totalDue}].map(card=><div key={card.label} className="rounded-xl border border-white/[.06] bg-white/[.025] p-4"><div className="text-xs text-slate-400">{card.label}</div><div className="mt-2 text-xl font-semibold text-white">{currency(card.value)}</div></div>)}</div>
-        <div className="mb-5 space-y-2">{employees.map(employee=><div key={employee.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white/[.035] p-3"><div><div className="text-sm font-medium text-white">{employee.name}</div><div className="mt-1 text-xs text-slate-500">Monthly salary {currency(employee.salary)} · Advance outstanding {currency(employee.advance)}</div></div><button onClick={()=>recordSalaryAdvance(employee)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300">Record advance</button></div>)}</div>
-        <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-sm"><thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="pb-3">Month</th><th className="pb-3">Employee</th><th className="pb-3 text-right">Net salary</th><th className="pb-3 text-right">Paid</th><th className="pb-3 text-right">Remaining</th><th className="pb-3">Status</th><th className="pb-3"/></tr></thead><tbody>{payroll.slice().sort((a,b)=>b.period.localeCompare(a.period)||a.employeeName.localeCompare(b.employeeName)).map(record=>{const paidAmount=record.payments.reduce((sum,payment)=>sum+payment.amount,0);const remaining=Math.max(0,record.netSalary-paidAmount);return <tr key={record.id} className="border-t border-white/[.06]"><td className="py-3 text-slate-400">{record.period}</td><td className="py-3 font-medium text-white">{record.employeeName}<div className="mt-1 text-[10px] text-slate-500">Base {currency(record.baseSalary)} · Bonus {currency(record.bonus)} · Other deduction {currency(record.deduction)} · Advance deduction {currency(record.advanceDeduction)}</div></td><td className="py-3 text-right text-white">{currency(record.netSalary)}</td><td className="py-3 text-right text-emerald-300">{currency(paidAmount)}</td><td className="py-3 text-right text-amber-200">{currency(remaining)}</td><td className="py-3"><span className={`rounded-full px-2 py-1 text-[10px] ${remaining===0?'bg-emerald-400/10 text-emerald-300':paidAmount>0?'bg-amber-400/10 text-amber-200':'bg-white/[.06] text-slate-400'}`}>{remaining===0?'Paid':paidAmount>0?'Part-paid':'Unpaid'}</span></td><td className="py-3 text-right">{remaining>0&&<button onClick={()=>recordPayrollPayment(record)} className="rounded-lg border border-[#e7b943]/30 px-2.5 py-1.5 text-xs text-[#e7b943]">Pay salary</button>}</td></tr>})}</tbody></table>{!payroll.length&&<p className="py-10 text-center text-sm text-slate-500">No payroll records. Create a monthly payroll to begin.</p>}</div>
+        <div className="mb-5 space-y-2">{employees.filter(employee=>employee.active!==false).map(employee=><div key={employee.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white/[.035] p-3"><div><div className="text-sm font-medium text-white">{employee.name}</div><div className="mt-1 text-xs text-slate-500">Monthly salary {currency(employee.salary)} · Advance outstanding {currency(employee.advance)}</div></div>{canManageHr&&<button onClick={()=>recordSalaryAdvance(employee)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300">Record advance</button>}</div>)}</div>
+        <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-sm"><thead className="text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="pb-3">Month</th><th className="pb-3">Employee</th><th className="pb-3 text-right">Net salary</th><th className="pb-3 text-right">Paid</th><th className="pb-3 text-right">Remaining</th><th className="pb-3">Status</th><th className="pb-3"/></tr></thead><tbody>{payroll.slice().sort((a,b)=>b.period.localeCompare(a.period)||a.employeeName.localeCompare(b.employeeName)).map(record=>{const paidAmount=record.payments.reduce((sum,payment)=>sum+payment.amount,0);const remaining=Math.max(0,record.netSalary-paidAmount);return <tr key={record.id} className="border-t border-white/[.06]"><td className="py-3 text-slate-400">{record.period}</td><td className="py-3 font-medium text-white">{record.employeeName}<div className="mt-1 text-[10px] text-slate-500">Base {currency(record.baseSalary)} · Bonus {currency(record.bonus)} · Other deduction {currency(record.deduction)}{record.deductionNote ? ` (${record.deductionNote})` : ''} · Advance deduction {currency(record.advanceDeduction)}</div></td><td className="py-3 text-right text-white">{currency(record.netSalary)}</td><td className="py-3 text-right text-emerald-300">{currency(paidAmount)}</td><td className="py-3 text-right text-amber-200">{currency(remaining)}</td><td className="py-3"><span className={`rounded-full px-2 py-1 text-[10px] ${remaining===0?'bg-emerald-400/10 text-emerald-300':paidAmount>0?'bg-amber-400/10 text-amber-200':'bg-white/[.06] text-slate-400'}`}>{remaining===0?'Paid':paidAmount>0?'Part-paid':'Unpaid'}</span></td><td className="py-3 text-right">{remaining>0&&<button onClick={()=>recordPayrollPayment(record)} className="rounded-lg border border-[#e7b943]/30 px-2.5 py-1.5 text-xs text-[#e7b943]">Pay salary</button>}</td></tr>})}</tbody></table>{!payroll.length&&<p className="py-10 text-center text-sm text-slate-500">No payroll records. Create a monthly payroll to begin.</p>}</div>
         {payroll.some(item=>item.payments.length>0)&&<div className="mt-5 border-t border-white/[.06] pt-4"><h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Payment history</h3><div className="space-y-2">{payroll.flatMap(record=>record.payments.map(payment=>({record,payment}))).sort((a,b)=>b.payment.createdAt.localeCompare(a.payment.createdAt)).map(({record,payment})=><div key={payment.id} className="flex flex-wrap justify-between gap-2 rounded-lg bg-white/[.03] px-3 py-2 text-xs"><span className="text-slate-300">{record.employeeName} · {record.period} · {payment.paymentMethod}</span><span className="text-white">{payment.date} · {currency(payment.amount)}</span></div>)}</div></div>}
       </section>
     </div>;
@@ -1508,7 +1541,8 @@ function App() {
   const moduleMessages: Record<string,string> = { tables:'Manage table labels, seating capacity and branch-scoped occupancy status.', reservations:'Schedule guests, record party size and contact details, and track booked, seated, completed or cancelled reservations.', menu:'Create, edit, deactivate and reactivate products. Inactive products remain available for restoration.', categories:'Create, rename and delete categories. Categories with active products cannot be deleted.', recipes:'Manage recipes, estimate per-item ingredient cost and margin from current inventory unit costs, and check tracked stock capacity.', purchases:'Record goods received, add quantities to inventory and track supplier credit locally.', delivery:'Assign Home Delivery orders to branch delivery staff and track pickup and delivery status.', expenses:'Record shop operating expenses, payment method and expense date; review daily and monthly totals.', employees:'Manage employee profiles, monthly salaries and shift details in local POS storage.', attendance:'Update daily employee attendance status in local POS storage.', payroll:'Create monthly payroll, track salary advances, and record full or partial Cash/Mada salary payments.', reports:'Dashboard includes actual order totals and item sales; date filtering/export reports need completion.', profit:'Reliable profit & loss requires recorded COGS, purchases, expenses and salaries; not yet implemented.',  discounts:'Coupon codes and discount authorization need completion.', roles:'Authentication and enforceable role permissions need a secure backend.', settings:'Restaurant and branch settings need completion.' };
   const selectedLabel = moduleGroups.flatMap(group=>group.items).find(item=>item.id===view)?.label || 'Dashboard';
   const placeholder = (): ReactNode => <section className={`${panel} p-6 md:p-8`}><div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#e7b943]/10 text-[#e7b943]"><Activity size={21}/></div><div className="mt-5">{heading('Module status',selectedLabel,'This module is listed for the complete product scope.')}</div><p className="mt-4 max-w-2xl text-sm leading-6 text-slate-400">{moduleMessages[view] || 'This module is planned but is not part of the current working demo.'}</p><div className="mt-6 rounded-xl border border-amber-300/15 bg-amber-300/[.04] p-4 text-xs leading-5 text-amber-100/70">This screen is intentionally marked as incomplete—no demo action or placeholder value is presented as a completed workflow.</div><button onClick={()=>setView('dashboard')} className="mt-5 rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-300 hover:border-white/20">Back to dashboard</button></section>;
-  const content: Record<string,()=>ReactNode> = { dashboard, pos, orders:ordersView, kitchen, delivery:deliveryView, tables:tablesView, reservations:reservationsView, menu:menuView, categories:categoriesView, inventory:inventoryView, recipes:recipesView, suppliers:suppliersView, purchases:purchasesView, customers:customersView, employees:employeesView, attendance:attendanceView, payroll:payrollView, expenses:expensesView, accounting, reports:reportsView, profit:profitView, qr, settings:apiSettings };
+  const restrictedHrView = (): ReactNode => <section className={`${panel} p-6`}>{heading('Access','Restricted','Your role does not have access to employee, attendance or payroll records.')}</section>;
+  const content: Record<string,()=>ReactNode> = { dashboard, pos, orders:ordersView, kitchen, delivery:deliveryView, tables:tablesView, reservations:reservationsView, menu:menuView, categories:categoriesView, inventory:inventoryView, recipes:recipesView, suppliers:suppliersView, purchases:purchasesView, customers:customersView, employees:canViewPayroll?employeesView:restrictedHrView, attendance:canManageHr?attendanceView:restrictedHrView, payroll:canViewPayroll?payrollView:restrictedHrView, expenses:expensesView, accounting, reports:reportsView, profit:profitView, qr, settings:apiSettings };
   const activeContent = content[view] ? content[view]() : placeholder();
 
   return <div className={`${light?'theme-light':''} min-h-screen bg-[#0e1114] text-slate-100`}><div className="flex min-h-screen"><aside className={`fixed inset-y-0 left-0 z-40 flex w-[260px] flex-col border-r border-white/[.06] bg-[#111519] transition-transform lg:static lg:translate-x-0 ${mobileNav?'translate-x-0':'-translate-x-full'}`}><div className="flex h-[76px] items-center gap-3 border-b border-white/[.06] px-5"><div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-[#f0ca69] to-[#b37a18] font-serif text-xl font-black text-[#201707]">M</div><div><div className="font-serif text-lg font-bold tracking-wide text-white">Musafir</div><div className="text-[9px] uppercase tracking-[.28em] text-[#cba84c]">Fast Food</div></div><button onClick={()=>setMobileNav(false)} className="ml-auto text-slate-500 lg:hidden"><X size={19}/></button></div><div className="mx-3 mt-4 flex items-center gap-3 rounded-xl border border-white/[.06] bg-white/[.025] p-3"><div className="grid h-9 w-9 place-items-center rounded-full bg-[#e7b943] text-sm font-bold text-[#211908]">A</div><div className="min-w-0"><div className="text-sm font-medium text-white">Admin</div><div className="text-[11px] text-slate-500">Restaurant owner</div></div><span className="ml-auto h-2 w-2 rounded-full bg-emerald-400"/></div><nav className="custom-scrollbar flex-1 space-y-5 overflow-y-auto px-3 py-5">{moduleGroups.map(group=><div key={group.title}><div className="mb-2 px-3 text-[9px] font-bold uppercase tracking-[.2em] text-slate-600">{group.title}</div><div className="space-y-1">{group.items.map(item=><button key={item.id} onClick={()=>{setView(item.id);setMobileNav(false);}} className={`nav-item ${view===item.id?'nav-active':''}`}><item.icon size={16} strokeWidth={1.8}/><span className="flex-1 text-left">{item.label}</span>{item.id==='pos'&&cart.length>0&&<span className="rounded-full bg-[#e7b943] px-1.5 py-0.5 text-[10px] font-bold text-black">{cart.reduce((n,i)=>n+i.qty,0)}</span>}</button>)}</div></div>)}</nav><div className="border-t border-white/[.06] p-3"><div className="rounded-xl bg-gradient-to-r from-[#211d13] to-[#17191a] p-3"><div className="text-xs font-medium text-[#ead18b]">Good Food • Good Mood</div><div className="mt-1 text-[10px] text-slate-500">Premium service, made simple.</div></div><button onClick={()=>flash('Sign out requires authentication, which is not yet configured.')} className="mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs text-slate-500 hover:bg-white/[.04] hover:text-slate-300"><LogOut size={15}/>Sign out</button></div></aside>

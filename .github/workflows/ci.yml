@@ -11,6 +11,26 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: musafir_ci
+          POSTGRES_USER: musafir
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U musafir -d musafir_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://musafir:ci-only-password@localhost:5432/musafir_ci
+      JWT_SECRET: ci-only-jwt-secret-0123456789-abcdefghijklmnop
+      PORT: "3001"
+      CORS_ORIGIN: http://localhost:5173
+      API_URL: http://localhost:3001
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -22,3 +42,16 @@ jobs:
         run: npm install
       - name: Type-check frontend, API, and build production assets
         run: npm run build
+      - name: Unit tests
+        run: npm test
+      - name: Apply database migrations
+        run: npm run db:migrate
+      - name: Start API
+        run: |
+          nohup npx tsx server/index.ts > api.log 2>&1 &
+          echo "API starting"
+      - name: PostgreSQL HR API integration tests
+        run: npm run test:integration
+      - name: Show API log on failure
+        if: failure()
+        run: cat api.log || true
