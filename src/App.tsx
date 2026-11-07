@@ -42,6 +42,7 @@ function App() {
   const [search, setSearch] = useState('');
   const [orderType, setOrderType] = useState<Order['type']>('Dine-in');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [customerSearch, setCustomerSearch] = useState('');
   const [payMethod, setPayMethod] = useState<PaymentMethod>('Cash');
   const [discount, setDiscount] = useState('0');
   const [note, setNote] = useState('');
@@ -532,6 +533,30 @@ function App() {
   const addStock = async (item: InventoryItem) => { const quantity = Number(window.prompt(`How many ${item.unit} should be added to ${item.name}?`, '10')); if (!Number.isFinite(quantity) || quantity <= 0) return; if(apiToken&&apiConnected){try{const response=await fetch(`${apiBase.replace(/\/$/,'')}/api/inventory/${encodeURIComponent(item.id)}/adjust`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({quantity,note:'Stock received from POS inventory'})});const result=await response.json();if(!response.ok)throw new Error(result.error||'Stock could not be updated.');const saved=result.item;setInventory(current=>current.map(entry=>entry.id===item.id?{...entry,stock:Number(saved.stock),trackStock:Boolean(saved.trackStock??saved.track_stock)}:entry));flash(`${item.name} stock updated in database.`);return;}catch(error){flash(error instanceof Error?error.message:'Stock update failed.');return;}}setInventory(current=>current.map(entry=>entry.id===item.id?{...entry,stock:entry.stock+quantity,trackStock:true}:entry));setLogs(current=>[{id:`stock-${Date.now()}`,title:'Stock received',detail:`${item.name} · +${quantity} ${item.unit} · Offline demo`,time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})},...current]);flash(`${item.name} stock updated in offline demo.`); };
   const addCustomer = async () => { const name = window.prompt('Customer name'); if (!name?.trim()) return; const phone = (window.prompt('Phone number') || '').trim(); const address = (window.prompt('Address (optional)') || '').trim(); if (apiToken && apiConnected) { try { const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/customers`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiToken}` }, body: JSON.stringify({ name: name.trim(), phone, address }) }); const result = await response.json(); if (!response.ok || !result.customer) throw new Error(result.error || 'Customer could not be saved.'); const saved = result.customer; setCustomers(current => [{ id: saved.id, name: saved.name, phone: saved.phone || '', address: saved.address || '', loyaltyPoints: Number(saved.loyaltyPoints || 0), favoriteItems: [] }, ...current]); flash('Customer saved to the database.'); } catch (error) { flash(error instanceof Error ? error.message : 'Customer save failed.'); } return; } setCustomers(current => [{ id: `c-${Date.now()}`, name: name.trim(), phone, address, loyaltyPoints: 0, favoriteItems: [] }, ...current]); setLogs(current => [{ id: `customer-${Date.now()}`, title: 'Customer added', detail: `${name.trim()} · ${phone || 'No phone saved'}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]); flash('Customer added to this device only. Connect the API to save across devices.'); };
 
+  const editCustomer = async (customer: Customer) => {
+    const name = window.prompt('Customer name', customer.name);
+    if (!name?.trim()) return;
+    const phone = (window.prompt('Phone number', customer.phone) || '').trim();
+    const address = (window.prompt('Address (optional)', customer.address) || '').trim();
+    if (apiToken && apiConnected) {
+      try {
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/customers/${encodeURIComponent(customer.id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiToken}` },
+          body: JSON.stringify({ name: name.trim(), phone, address })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.customer) throw new Error(result.error || 'Customer could not be updated.');
+        const saved = result.customer;
+        setCustomers(current => current.map(item => item.id === customer.id ? { ...item, name: saved.name, phone: saved.phone || '', address: saved.address || '' } : item));
+        flash('Customer updated in the database.');
+      } catch (error) { flash(error instanceof Error ? error.message : 'Customer update failed.'); }
+      return;
+    }
+    setCustomers(current => current.map(item => item.id === customer.id ? { ...item, name: name.trim(), phone, address } : item));
+    flash('Customer updated on this device only.');
+  };
+
   const panel = 'rounded-[24px] border border-white/[.07] bg-[#14191f] shadow-[0_18px_50px_rgba(0,0,0,.24)]';
   const heading = (eyebrow: string, title: string, subtitle?: string) => <div><p className="text-[10px] font-bold uppercase tracking-[.24em] text-[#caa348]">{eyebrow}</p><h1 className="mt-1 text-[26px] font-semibold tracking-tight text-white">{title}</h1>{subtitle && <p className="mt-1 text-sm text-slate-400">{subtitle}</p>}</div>;
 
@@ -916,7 +941,16 @@ function App() {
       </section>
     </div>;
   };
-  const customersView = (): ReactNode => <section className={`${panel} p-5`}><div className="mb-5 flex items-end justify-between gap-3">{heading('Guest relationships','Customers','Customer contact details and loyalty points.')}<button onClick={addCustomer} className="inline-flex items-center gap-2 rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]"><Plus size={15}/> Add customer</button></div><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{customers.map(customer=><article key={customer.id} className="rounded-2xl border border-white/[.07] bg-[#191e24] p-4"><div className="flex items-center justify-between"><h3 className="font-semibold text-white">{customer.name}</h3><span className="rounded-full bg-[#e7b943]/10 px-2 py-1 text-xs text-[#e7b943]">{customer.loyaltyPoints} pts</span></div><p className="mt-3 text-sm text-slate-400">{customer.phone || 'No phone saved'}</p><p className="mt-1 text-xs text-slate-500">{customer.address || 'No address saved'}</p><div className="mt-4 border-t border-white/[.06] pt-3 text-xs text-slate-400">Loyalty account <strong className="float-right text-white">Active</strong></div></article>)}</div></section>;
+  const customersView = (): ReactNode => {
+    const query = customerSearch.trim().toLocaleLowerCase();
+    const visibleCustomers = customers.filter(customer => !query || [customer.name, customer.phone, customer.address].some(value => value.toLocaleLowerCase().includes(query)));
+    return <section className={`${panel} p-5`}>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Guest relationships','Customers','Search, manage and update customer contact details.')}<button onClick={addCustomer} className="inline-flex items-center gap-2 rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]"><Plus size={15}/> Add customer</button></div>
+      <div className="mb-4 flex items-center gap-2 rounded-xl border border-white/[.09] bg-[#191e24] px-3 py-2.5"><Search size={16} className="text-slate-500"/><input value={customerSearch} onChange={event=>setCustomerSearch(event.target.value)} placeholder="Search by name, phone or address" className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-500"/></div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{visibleCustomers.map(customer=><article key={customer.id} className="rounded-2xl border border-white/[.07] bg-[#191e24] p-4"><div className="flex items-center justify-between gap-2"><h3 className="font-semibold text-white">{customer.name}</h3><span className="rounded-full bg-[#e7b943]/10 px-2 py-1 text-xs text-[#e7b943]">{customer.loyaltyPoints} pts</span></div><p className="mt-3 text-sm text-slate-400">{customer.phone || 'No phone saved'}</p><p className="mt-1 text-xs text-slate-500">{customer.address || 'No address saved'}</p><div className="mt-4 flex items-center justify-between border-t border-white/[.06] pt-3 text-xs text-slate-400"><span>Loyalty account <strong className="text-white">Active</strong></span><button onClick={()=>void editCustomer(customer)} className="rounded-lg border border-[#e7b943]/25 px-3 py-1.5 font-semibold text-[#e7b943]">Edit</button></div></article>)}</div>
+      {!visibleCustomers.length && <p className="py-10 text-center text-sm text-slate-500">{customers.length ? 'No customers match this search.' : 'No customers saved yet.'}</p>}
+    </section>;
+  };
   const accounting = (): ReactNode => <div className="grid gap-4 xl:grid-cols-2"><section className={`${panel} p-5`}>{heading('Finance','Recorded sales','Figures below are derived from saved order records.') }<div className="mt-5 space-y-4 text-sm"><div className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"><span>Sales today</span><strong className="text-white">{currency(salesToday)}</strong></div><div className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"><span>Recorded order count</span><strong className="text-white">{orders.filter(order=>order.number!=='HOLD').length}</strong></div><div className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"><span>Payments received</span><strong className="text-white">{currency(orders.filter(order=>order.number!=='HOLD').reduce((n,order)=>n+order.paid,0))}</strong></div><div className="flex justify-between border-b border-white/[.06] pb-3 text-slate-400"></div><p className="text-xs leading-5 text-amber-200/70">Profit & loss needs recorded purchases and operating expenses; estimates are intentionally not shown as actuals.</p></div></section><section className={`${panel} p-5`}>{<div className="flex items-start justify-between gap-3">{heading('Payables','Supplier balances',apiConnected?'Live supplier balances from the POS database.':'Local supplier records; connect the API for shared balances.') }<button onClick={addSupplier} className="shrink-0 rounded-lg border border-[#e7b943]/40 px-3 py-2 text-xs font-semibold text-[#e7b943]">Add supplier</button></div>}<div className="mt-4 space-y-2">{suppliers.map(supplier=><div key={supplier.id} className="flex items-center justify-between gap-3 rounded-xl bg-white/[.035] p-3"><div className="min-w-0"><div className="text-sm text-white">{supplier.name}</div><div className="mt-1 text-xs text-slate-500">{supplier.category} · {supplier.phone || 'No phone'}</div></div><div className="flex shrink-0 items-center gap-3"><strong className="text-sm text-[#e7b943]">{currency(supplier.due)}</strong><button onClick={()=>editSupplier(supplier)} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-300">Edit</button><button onClick={()=>paySupplier(supplier)} disabled={!apiConnected||supplier.due<=0} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-300 hover:border-[#e7b943]/40 disabled:cursor-not-allowed disabled:opacity-40">Pay</button></div></div>)}</div></section></div>;
   const reportStartDate = (range: string): string => {
     const now = new Date();
