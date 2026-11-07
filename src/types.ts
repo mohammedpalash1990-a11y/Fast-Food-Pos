@@ -80,6 +80,7 @@ export interface Employee {
   status: 'Present' | 'Absent' | 'On Leave';
   salary: number;
   advance: number;
+  active?: boolean;
 }
 
 export interface LogEntry {
