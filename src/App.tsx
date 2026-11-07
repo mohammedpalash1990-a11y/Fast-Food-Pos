@@ -324,7 +324,7 @@ function App() {
         fetch(`${base}/api/suppliers`, { headers: authHeaders }),
         fetch(`${base}/api/purchases`, { headers: authHeaders })
       ]);
-      const [menu, categoryData, orderData, inventoryData, supplierData, purchaseData] = await Promise.all([menuResponse.json(), categoryResponse.json(), ordersResponse.json(), inventoryResponse.json(), suppliersResponse.json(), purchasesResponse.json()]);
+      const [menu, categoryData, productData, orderData, inventoryData, supplierData, purchaseData] = await Promise.all([menuResponse.json(), categoryResponse.json(), productsResponse.json(), ordersResponse.json(), inventoryResponse.json(), suppliersResponse.json(), purchasesResponse.json()]);
       if (!menuResponse.ok || !Array.isArray(menu.products)) throw new Error(menu.error || 'Could not load the branch menu.');
       if (!categoryResponse.ok || !Array.isArray(categoryData.categories)) throw new Error(categoryData.error || 'Could not load menu categories.');
       if (!productsResponse.ok || !Array.isArray(productData.products)) throw new Error(productData.error || 'Could not load product management data.');
@@ -361,7 +361,7 @@ function App() {
       setApiBase(base); save('musafir-api-base', base);
       setApiToken(login.token); setApiBranchId(branchId); setApiConnected(true);
       setApiPassword('');
-      setApiMessage(`Connected to branch ${branchId}. ${menu.products.length} menu products, ${orderData.orders.length} orders and ${inventoryData.items.length} inventory items loaded.`);
+      setApiMessage(`Connected to branch ${branchId}. ${productData.products.filter((item: {active:boolean})=>item.active).length} menu products, ${orderData.orders.length} orders and ${inventoryData.items.length} inventory items loaded.`);
     } catch (error) {
       setApiToken(''); setApiBranchId(''); setApiConnected(false);
       setApiMessage(error instanceof Error ? error.message : 'Could not connect to backend.');
