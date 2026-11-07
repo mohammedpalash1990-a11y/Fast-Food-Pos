@@ -9,6 +9,7 @@ import jwt from 'jsonwebtoken';
 import QRCode from 'qrcode';
 import { z } from 'zod';
 import { pool, inTransaction } from './db.js';
+import { registerHrRoutes } from './hr.js';
 
 type Role = 'owner'|'manager'|'cashier'|'kitchen'|'inventory'|'accountant'|'delivery';
 type AuthUser = { id:string; organizationId:string; branchId:string; email:string; displayName:string; role:Role };
@@ -276,56 +277,6 @@ app.patch('/api/deliveries/:id/status',authenticate,allow('owner','manager','cas
   });
   res.json({delivery});
 }));
-app.get('/api/employees',authenticate,allow('owner','manager','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const requestedDate=String(req.query.date||new Date().toISOString().slice(0,10));
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate))return res.status(400).json({error:'Invalid attendance date'});
-  const rows=await pool.query(`SELECT e.id,e.name,e.job_role AS role,e.shift,e.monthly_salary AS salary,
-    COALESCE((SELECT a.status FROM employee_attendance a WHERE a.employee_id=e.id AND a.attendance_date=$3::date),'Present') AS status,
-    COALESCE((SELECT SUM(sa.amount-sa.deducted) FROM salary_advances sa WHERE sa.employee_id=e.id),0) AS advance
-    FROM employees e WHERE e.organization_id=$1 AND e.branch_id=$2 AND e.active=true ORDER BY e.name`,[req.user!.organizationId,req.user!.branchId,requestedDate]);
-  res.json({employees:rows.rows});
-}));
-app.post('/api/employees',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const parsed=employeeInput.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid employee data',details:parsed.error.flatten()});
-  const d=parsed.data;const employee=await inTransaction(async client=>{
-    const row=await client.query(`INSERT INTO employees(organization_id,branch_id,name,job_role,shift,monthly_salary,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,name,job_role AS role,shift,monthly_salary AS salary`,[req.user!.organizationId,req.user!.branchId,d.name,d.role,d.shift,d.salary,req.user!.id]);
-    await client.query(`INSERT INTO employee_attendance(employee_id,organization_id,branch_id,attendance_date,status,created_by) VALUES($1,$2,$3,CURRENT_DATE,'Present',$4) ON CONFLICT(employee_id,attendance_date) DO NOTHING`,[row.rows[0].id,req.user!.organizationId,req.user!.branchId,req.user!.id]);
-    await audit(client,req.user!,'employee.created','employee',row.rows[0].id,d);return row.rows[0];
-  });res.status(201).json({employee:{...employee,status:'Present',advance:0}});
-}));
-app.patch('/api/employees/:id',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const parsed=employeeInput.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid employee data',details:parsed.error.flatten()});const d=parsed.data;
-  const employee=await inTransaction(async client=>{const row=await client.query(`UPDATE employees SET name=$1,job_role=$2,shift=$3,monthly_salary=$4,updated_at=now() WHERE id=$5 AND organization_id=$6 AND branch_id=$7 AND active=true RETURNING id,name,job_role AS role,shift,monthly_salary AS salary`,[d.name,d.role,d.shift,d.salary,String(req.params.id),req.user!.organizationId,req.user!.branchId]);if(!row.rowCount)throw Object.assign(new Error('Employee not found'),{status:404});await audit(client,req.user!,'employee.updated','employee',row.rows[0].id,d);return row.rows[0];});res.json({employee});
-}));
-app.delete('/api/employees/:id',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const result=await inTransaction(async client=>{
-    const employee=await client.query('UPDATE employees SET active=false,updated_at=now() WHERE id=$1 AND organization_id=$2 AND branch_id=$3 AND active=true RETURNING id,name',[String(req.params.id),req.user!.organizationId,req.user!.branchId]);
-    if(!employee.rowCount)throw Object.assign(new Error('Employee not found or already inactive'),{status:404});
-    await audit(client,req.user!,'employee.deactivated','employee',employee.rows[0].id,{name:employee.rows[0].name});
-    return employee.rows[0];
-  });
-  res.json({success:true,employee:result});
-}));
-app.post('/api/attendance',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const parsed=z.object({employeeId:z.string().uuid(),date:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).default(new Date().toISOString().slice(0,10)),status:z.enum(['Present','Absent','On Leave'])}).safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid attendance record'});const d=parsed.data;
-  const result=await inTransaction(async client=>{const employee=await client.query('SELECT id FROM employees WHERE id=$1 AND organization_id=$2 AND branch_id=$3 AND active=true',[d.employeeId,req.user!.organizationId,req.user!.branchId]);if(!employee.rowCount)throw Object.assign(new Error('Employee not found'),{status:404});const row=await client.query(`INSERT INTO employee_attendance(employee_id,organization_id,branch_id,attendance_date,status,created_by) VALUES($1,$2,$3,$4::date,$5,$6) ON CONFLICT(employee_id,attendance_date) DO UPDATE SET status=EXCLUDED.status,updated_at=now(),created_by=EXCLUDED.created_by RETURNING id,employee_id AS "employeeId",attendance_date::text AS date,status`,[d.employeeId,req.user!.organizationId,req.user!.branchId,d.date,d.status,req.user!.id]);await audit(client,req.user!,'attendance.updated','employee',d.employeeId,d);return row.rows[0];});res.json({attendance:result});
-}));
-app.get('/api/payroll',authenticate,allow('owner','manager','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const rows=await pool.query(`SELECT p.id,p.employee_id AS "employeeId",e.name AS "employeeName",p.period,p.base_salary AS "baseSalary",p.bonus,p.deduction,p.advance_deduction AS "advanceDeduction",p.net_salary AS "netSalary",p.created_at AS "createdAt",
-    COALESCE((SELECT json_agg(json_build_object('id',pp.id,'amount',pp.amount,'paymentMethod',pp.method,'date',pp.payment_date::text,'createdAt',pp.created_at) ORDER BY pp.created_at) FROM payroll_payments pp WHERE pp.payroll_id=p.id),'[]'::json) AS payments
-    FROM payroll_records p JOIN employees e ON e.id=p.employee_id WHERE p.organization_id=$1 AND p.branch_id=$2 ORDER BY p.period DESC,e.name`,[req.user!.organizationId,req.user!.branchId]);res.json({payroll:rows.rows});
-}));
-app.post('/api/employees/:id/advances',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const parsed=z.object({amount:z.number().positive().max(10000000),note:z.string().trim().max(300).default('Salary advance')}).safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid salary advance'});const d=parsed.data;
-  const advance=await inTransaction(async client=>{const employee=await client.query('SELECT id FROM employees WHERE id=$1 AND organization_id=$2 AND branch_id=$3 AND active=true',[String(req.params.id),req.user!.organizationId,req.user!.branchId]);if(!employee.rowCount)throw Object.assign(new Error('Employee not found'),{status:404});const row=await client.query(`INSERT INTO salary_advances(employee_id,organization_id,branch_id,amount,note,created_by) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,amount,note,created_at AS "createdAt"`,[String(req.params.id),req.user!.organizationId,req.user!.branchId,d.amount,d.note,req.user!.id]);await audit(client,req.user!,'salary.advance_created','salary_advance',row.rows[0].id,d);return row.rows[0];});res.status(201).json({advance});
-}));
-app.post('/api/payroll',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const parsed=z.object({employeeId:z.string().uuid(),period:z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),bonus:z.number().min(0).max(10000000).default(0),deduction:z.number().min(0).max(10000000).default(0),advanceDeduction:z.number().min(0).max(10000000).default(0)}).safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid payroll data'});const d=parsed.data;
-  const record=await inTransaction(async client=>{const employee=await client.query('SELECT id,name,monthly_salary FROM employees WHERE id=$1 AND organization_id=$2 AND branch_id=$3 AND active=true FOR UPDATE',[d.employeeId,req.user!.organizationId,req.user!.branchId]);if(!employee.rowCount)throw Object.assign(new Error('Employee not found'),{status:404});const existing=await client.query('SELECT id FROM payroll_records WHERE employee_id=$1 AND period=$2',[d.employeeId,d.period]);if(existing.rowCount)throw Object.assign(new Error('Payroll already exists for this employee and month'),{status:409});const base=Number(employee.rows[0].monthly_salary),bonus=d.bonus,deduction=d.deduction;const advanceRows=await client.query('SELECT id,amount,deducted FROM salary_advances WHERE employee_id=$1 AND organization_id=$2 AND branch_id=$3 AND amount>deducted ORDER BY created_at,id FOR UPDATE',[d.employeeId,req.user!.organizationId,req.user!.branchId]);const outstanding=advanceRows.rows.reduce((sum,row)=>sum+Number(row.amount)-Number(row.deducted),0);if(d.advanceDeduction>outstanding||deduction+d.advanceDeduction>base+bonus)throw Object.assign(new Error('Advance deduction exceeds the outstanding advance or salary'),{status:400});let remaining=d.advanceDeduction;for(const row of advanceRows.rows){if(remaining<=0)break;const available=Number(row.amount)-Number(row.deducted);const take=Math.min(available,remaining);if(take>0){await client.query('UPDATE salary_advances SET deducted=deducted+$1 WHERE id=$2',[take,row.id]);remaining-=take;}}const net=base+bonus-deduction-d.advanceDeduction;const inserted=await client.query(`INSERT INTO payroll_records(employee_id,organization_id,branch_id,period,base_salary,bonus,deduction,advance_deduction,net_salary,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,employee_id AS "employeeId",period,base_salary AS "baseSalary",bonus,deduction,advance_deduction AS "advanceDeduction",net_salary AS "netSalary",created_at AS "createdAt"`,[d.employeeId,req.user!.organizationId,req.user!.branchId,d.period,base,bonus,deduction,d.advanceDeduction,net,req.user!.id]);await audit(client,req.user!,'payroll.created','payroll',inserted.rows[0].id,{...d,employeeName:employee.rows[0].name,netSalary:net});return {...inserted.rows[0],employeeName:employee.rows[0].name,payments:[]};});res.status(201).json({payroll:record});
-}));
-app.post('/api/payroll/:id/payments',authenticate,allow('owner','manager','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{
-  const parsed=z.object({amount:z.number().positive().max(10000000),method:z.enum(['Cash','Mada']),date:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).default(new Date().toISOString().slice(0,10))}).safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid payroll payment'});const d=parsed.data;
-  const payment=await inTransaction(async client=>{const payroll=await client.query('SELECT id,net_salary FROM payroll_records WHERE id=$1 AND organization_id=$2 AND branch_id=$3 FOR UPDATE',[String(req.params.id),req.user!.organizationId,req.user!.branchId]);if(!payroll.rowCount)throw Object.assign(new Error('Payroll record not found'),{status:404});const paid=await client.query('SELECT COALESCE(SUM(amount),0) AS total FROM payroll_payments WHERE payroll_id=$1',[String(req.params.id)]);const remaining=Number(payroll.rows[0].net_salary)-Number(paid.rows[0].total);if(d.amount>remaining)throw Object.assign(new Error('Payment exceeds remaining salary'),{status:400});const row=await client.query(`INSERT INTO payroll_payments(payroll_id,organization_id,branch_id,amount,method,payment_date,created_by) VALUES($1,$2,$3,$4,$5,$6::date,$7) RETURNING id,amount,method AS "paymentMethod",payment_date::text AS date,created_at AS "createdAt"`,[String(req.params.id),req.user!.organizationId,req.user!.branchId,d.amount,d.method,d.date,req.user!.id]);await audit(client,req.user!,'payroll.payment_recorded','payroll',String(req.params.id),row.rows[0]);return row.rows[0];});res.status(201).json({payment});
-}));
+registerHrRoutes(app,{pool,inTransaction,authenticate,allow,asyncRoute,audit});
 app.use((error:Error&{status?:number},_req:Request,res:Response,_next:NextFunction)=>{console.error(error);res.status(error.status||500).json({error:error.status?error.message:'Internal server error'});});
 const port=Number(process.env.PORT||3001);app.listen(port,()=>console.log(`Musafir API listening on ${port}`));
