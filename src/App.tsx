@@ -70,6 +70,7 @@ function App() {
   const [apiBusy, setApiBusy] = useState(false);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const orderSubmissionLock = useRef(false);
+  const orderIdempotencyKey = useRef('');
   const [apiMessage, setApiMessage] = useState('');
   const [backupMessage, setBackupMessage] = useState('');
   const backupInputRef = useRef<HTMLInputElement>(null);
@@ -278,18 +279,19 @@ function App() {
   const addToCart = (product: Product) => {
     setCart(current => { const exists = current.find(item => item.productId === product.id); return exists ? current.map(item => item.productId === product.id ? { ...item, qty: item.qty + 1 } : item) : [...current, { id: `${product.id}-${Date.now()}`, productId: product.id, name: product.name, price: product.price, qty: 1 }]; });
   };
-  const clearCart = () => { setCart([]); setDiscount('0'); setNote(''); setSelectedCustomerId(''); setSelectedTableId(''); };
+  const clearCart = () => { orderIdempotencyKey.current = ''; setCart([]); setDiscount('0'); setNote(''); setSelectedCustomerId(''); setSelectedTableId(''); };
   const placeOrder = async () => {
     if (orderSubmissionLock.current) return;
     if (!cart.length) { flash('Add at least one menu item first.'); return; }
     if (orderType==='Dine-in' && apiConnected && (!selectedTableId || !restaurantTables.some(table=>table.id===selectedTableId&&['Available','Reserved'].includes(table.status)))) { flash('Select an available restaurant table for this dine-in order.'); return; }
     orderSubmissionLock.current = true;
+    if (!orderIdempotencyKey.current) orderIdempotencyKey.current = crypto.randomUUID();
     setIsSubmittingOrder(true);
     if (apiToken && apiBranchId) {
       try {
         const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/orders`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiToken}` },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiToken}`, 'Idempotency-Key': orderIdempotencyKey.current },
           body: JSON.stringify({
             orderType,
             tableId: orderType==='Dine-in' ? selectedTableId || null : null,
