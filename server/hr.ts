@@ -6,7 +6,8 @@ import {
   hasAtMostTwoDecimals, isDateNotInFuture, isValidIsoDate, isValidPeriod, toCents
 } from './payroll-math.js';
 
-type User = { id: string; organizationId: string; branchId: string; role: string };
+type Role = 'owner' | 'manager' | 'cashier' | 'kitchen' | 'inventory' | 'accountant' | 'delivery';
+type User = { id: string; organizationId: string; branchId: string; email: string; displayName: string; role: Role };
 type HrDeps = {
   pool: Pool;
   inTransaction: <T>(work: (client: PoolClient) => Promise<T>) => Promise<T>;
