@@ -32,7 +32,7 @@ if (commitLegacyTransfer && (!targetUrl || !sourceUrl)) {
 const quote = (value: string) => '"' + value.replace(/"/g, '""') + '"';
 
 // Always prepare the Neon schema before an optional legacy transfer.
-for (const file of ['001_initial.sql', '002_team_payroll.sql', '003_reservations.sql', '004_restaurant_tables.sql', '005_delivery_dispatch.sql', '006_order_table_assignment.sql', '007_order_idempotency.sql']) {
+for (const file of ['001_initial.sql', '002_team_payroll.sql', '003_payroll_hardening.sql', '003_reservations.sql', '004_restaurant_tables.sql', '005_delivery_dispatch.sql', '006_order_table_assignment.sql', '007_order_idempotency.sql']) {
   const migration = await readFile(new URL('../db/migrations/' + file, import.meta.url), 'utf8');
   await pool.query(migration);
   console.log('Database migration applied: ' + file);
