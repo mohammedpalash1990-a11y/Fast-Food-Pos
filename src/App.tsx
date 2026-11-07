@@ -1212,7 +1212,7 @@ function App() {
   };
   const accounting = (): ReactNode => {
     const startDate = reportStartDate(reportRange);
-    const periodOrders = orders.filter(order=>order.number!=='HOLD'&&localDate(new Date(order.createdAt))>=startDate);
+    const periodOrders = orders.filter(order=>order.number!=='HOLD'&&order.status!=='Cancelled'&&localDate(new Date(order.createdAt))>=startDate);
     const periodExpenses = expenses.filter(item=>item.date>=startDate);
     const periodPurchases = purchases.filter(item=>item.date>=startDate);
     const periodPayroll = payroll.filter(record=>record.period>=startDate.slice(0,7));
@@ -1268,7 +1268,7 @@ function App() {
   };
   const reportsView = (): ReactNode => {
     const start = reportStartDate(reportRange);
-    const validOrders = orders.filter(order => order.number !== 'HOLD' && localDate(new Date(order.createdAt)) >= start);
+    const validOrders = orders.filter(order => order.number !== 'HOLD' && order.status !== 'Cancelled' && localDate(new Date(order.createdAt)) >= start);
     const validExpenses = expenses.filter(item => item.date >= start);
     const validPurchases = purchases.filter(item => item.date >= start);
     const sales = validOrders.reduce((sum, order) => sum + order.total, 0);
@@ -1312,7 +1312,7 @@ function App() {
   };
   const profitView = (): ReactNode => {
     const start = reportStartDate(reportRange);
-    const periodOrders = orders.filter(order=>order.number!=='HOLD' && localDate(new Date(order.createdAt))>=start);
+    const periodOrders = orders.filter(order=>order.number!=='HOLD' && order.status!=='Cancelled' && localDate(new Date(order.createdAt))>=start);
     const periodExpenses = expenses.filter(item=>item.date>=start);
     const periodPurchases = purchases.filter(item=>item.date>=start);
     const periodPayroll = payroll.filter(record=>record.period>=start.slice(0,7));
