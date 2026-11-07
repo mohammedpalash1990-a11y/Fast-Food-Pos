@@ -1003,10 +1003,12 @@ function App() {
   const addCategory = async () => {
     const name = window.prompt('New category name');
     if (!name?.trim()) return;
-    let categoryRecord = {id:`local-${Date.now()}`,name:name.trim()};
+    const normalizedName=name.trim();
+    if(menuCategories.some(item=>item.name.toLowerCase()===normalizedName.toLowerCase())){flash('This category already exists.');return;}
+    let categoryRecord = {id:`local-${Date.now()}`,name:normalizedName};
     if (apiConnected && apiToken) {
       try {
-        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/categories`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({name:name.trim()})});
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/categories`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({name:normalizedName})});
         const result = await response.json();
         if(!response.ok || !result.category) throw new Error(result.error || 'Category could not be saved.');
         categoryRecord = result.category;
@@ -1018,6 +1020,8 @@ function App() {
   const renameCategory = async (item:{id:string;name:string}) => {
     const name=window.prompt('Category name',item.name);
     if(!name?.trim() || name.trim()===item.name)return;
+    const normalizedName=name.trim();
+    if(menuCategories.some(category=>category.id!==item.id&&category.name.toLowerCase()===normalizedName.toLowerCase())){flash('This category already exists.');return;}
     if(apiConnected && apiToken) {
       try {
         const response=await fetch(`${apiBase.replace(/\/$/, '')}/api/categories/${encodeURIComponent(item.id)}`,{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({name:name.trim()})});
@@ -1025,13 +1029,14 @@ function App() {
         if(!response.ok)throw new Error(result.error||'Category could not be updated.');
       } catch(error){flash(error instanceof Error?error.message:'Category update failed.');return;}
     }
-    setMenuCategories(current=>current.map(category=>category.id===item.id?{...category,name:name.trim()}:category));
-    setProducts(current=>current.map(product=>product.category===item.name?{...product,category:name.trim() as Product['category']}:product));
-    if(category===item.name)setCategory(name.trim());
+    setMenuCategories(current=>current.map(category=>category.id===item.id?{...category,name:normalizedName}:category));
+    setProducts(current=>current.map(product=>product.category===item.name?{...product,category:normalizedName as Product['category']}:product));
+    if(category===item.name)setCategory(normalizedName);
     flash('Category updated.');
   };
   const deleteCategory = async (item:{id:string;name:string}) => {
-    if(!window.confirm(`Delete category "${item.name}"? Products must be moved first.`))return;
+    if(products.some(product=>product.category===item.name)){flash('Move or deactivate products in this category before deleting it.');return;}
+    if(!window.confirm(`Delete category "${item.name}"?`))return;
     if(apiConnected && apiToken) {
       try {
         const response=await fetch(`${apiBase.replace(/\/$/, '')}/api/categories/${encodeURIComponent(item.id)}`,{method:'DELETE',headers:{Authorization:`Bearer ${apiToken}`}});
@@ -1134,7 +1139,7 @@ function App() {
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Restaurant setup','Menu categories','Organize products into clear categories for the POS menu.')}<button onClick={addCategory} className="rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]"><Plus size={14} className="mr-1 inline"/>Add category</button></div>
     <div className="space-y-2">{menuCategories.map(item=><div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/[.07] bg-[#191e24] p-3"><div><div className="text-sm font-medium text-white">{item.name}</div><div className="mt-1 text-xs text-slate-500">{products.filter(product=>product.category===item.name).length} active products</div></div><div className="flex gap-2"><button onClick={()=>renameCategory(item)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300">Rename</button><button onClick={()=>deleteCategory(item)} className="rounded-lg border border-rose-400/20 px-3 py-2 text-xs text-rose-300">Delete</button></div></div>)}</div>
   </section>;
-  const moduleMessages: Record<string,string> = { tables:'Table occupancy, seating and table transfer workflows are not implemented yet.', reservations:'Reservation scheduling and guest reminders are not implemented yet.', menu:'Menu editing and product creation are planned; current products are available in POS.', categories:'Category editing is not implemented yet; category filters are available in POS.', recipes:'Recipe editor and ingredient-to-stock mapping need completion.', purchases:'Record goods received, add quantities to inventory and track supplier credit locally.', delivery:'Dispatch assignment and courier tracking need completion.', expenses:'Record shop operating expenses, payment method and expense date; review daily and monthly totals.', employees:'Manage employee profiles, monthly salaries and shift details in local POS storage.', attendance:'Update daily employee attendance status in local POS storage.', payroll:'Create monthly payroll, track salary advances, and record full or partial Cash/Mada salary payments.', reports:'Dashboard includes actual order totals and item sales; date filtering/export reports need completion.', profit:'Reliable profit & loss requires recorded COGS, purchases, expenses and salaries; not yet implemented.',  discounts:'Coupon codes and discount authorization need completion.', roles:'Authentication and enforceable role permissions need a secure backend.', settings:'Restaurant and branch settings need completion.' };
+  const moduleMessages: Record<string,string> = { tables:'Table occupancy, seating and table transfer workflows are not implemented yet.', reservations:'Reservation scheduling and guest reminders are not implemented yet.', menu:'Create, edit, deactivate and reactivate products. Inactive products remain available for restoration.', categories:'Create, rename and delete categories. Categories with active products cannot be deleted.', recipes:'Recipe editor and ingredient-to-stock mapping need completion.', purchases:'Record goods received, add quantities to inventory and track supplier credit locally.', delivery:'Dispatch assignment and courier tracking need completion.', expenses:'Record shop operating expenses, payment method and expense date; review daily and monthly totals.', employees:'Manage employee profiles, monthly salaries and shift details in local POS storage.', attendance:'Update daily employee attendance status in local POS storage.', payroll:'Create monthly payroll, track salary advances, and record full or partial Cash/Mada salary payments.', reports:'Dashboard includes actual order totals and item sales; date filtering/export reports need completion.', profit:'Reliable profit & loss requires recorded COGS, purchases, expenses and salaries; not yet implemented.',  discounts:'Coupon codes and discount authorization need completion.', roles:'Authentication and enforceable role permissions need a secure backend.', settings:'Restaurant and branch settings need completion.' };
   const selectedLabel = moduleGroups.flatMap(group=>group.items).find(item=>item.id===view)?.label || 'Dashboard';
   const placeholder = (): ReactNode => <section className={`${panel} p-6 md:p-8`}><div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#e7b943]/10 text-[#e7b943]"><Activity size={21}/></div><div className="mt-5">{heading('Module status',selectedLabel,'This module is listed for the complete product scope.')}</div><p className="mt-4 max-w-2xl text-sm leading-6 text-slate-400">{moduleMessages[view] || 'This module is planned but is not part of the current working demo.'}</p><div className="mt-6 rounded-xl border border-amber-300/15 bg-amber-300/[.04] p-4 text-xs leading-5 text-amber-100/70">This screen is intentionally marked as incomplete—no demo action or placeholder value is presented as a completed workflow.</div><button onClick={()=>setView('dashboard')} className="mt-5 rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-300 hover:border-white/20">Back to dashboard</button></section>;
   const content: Record<string,()=>ReactNode> = { dashboard, pos, orders:ordersView, kitchen, menu:menuView, categories:categoriesView, inventory:inventoryView, purchases:purchasesView, customers:customersView, employees:employeesView, attendance:attendanceView, payroll:payrollView, expenses:expensesView, accounting, reports:reportsView, profit:profitView, qr, settings:apiSettings };
