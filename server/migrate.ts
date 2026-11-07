@@ -8,17 +8,28 @@ const sourceUrl = process.env.DATABASE_URL;
 
 const quote = (value: string) => '"' + value.replace(/"/g, '""') + '"';
 
+// Always make the target schema usable before attempting an optional legacy transfer.
+// A temporary outage or network allowlist on the old database must not prevent the
+// production API from starting against Neon.
+for (const file of ['001_initial.sql', '002_team_payroll.sql']) {
+  const sql = await readFile(new URL('../db/migrations/' + file, import.meta.url), 'utf8');
+  await pool.query(sql);
+  console.log('Database migration applied: ' + file);
+}
+
 if (targetUrl && sourceUrl && targetUrl !== sourceUrl) {
-  const source = new Pool({ connectionString: sourceUrl, max: 2 });
-  const sourceClient = await source.connect();
-  const targetClient = await pool.connect();
-  const tableOrder = [
-    'organizations', 'branches', 'users', 'categories', 'suppliers', 'customers',
-    'ingredients', 'products', 'recipes', 'orders', 'order_items', 'payments',
-    'purchases', 'purchase_items', 'stock_movements', 'audit_logs'
-  ];
-  let copied = 0;
+  const source = new Pool({ connectionString: sourceUrl, max: 2, connectionTimeoutMillis: 5000 });
+  let sourceClient: import('pg').PoolClient | undefined;
+  let targetClient: import('pg').PoolClient | undefined;
   try {
+    sourceClient = await source.connect();
+    targetClient = await pool.connect();
+    const tableOrder = [
+      'organizations', 'branches', 'users', 'categories', 'suppliers', 'customers',
+      'ingredients', 'products', 'recipes', 'orders', 'order_items', 'payments',
+      'purchases', 'purchase_items', 'stock_movements', 'audit_logs'
+    ];
+    let copied = 0;
     const sourceTables = await sourceClient.query<{table_name:string}>(
       "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'"
     );
@@ -69,20 +80,20 @@ if (targetUrl && sourceUrl && targetUrl !== sourceUrl) {
     await targetClient.query('COMMIT');
     console.log('Legacy Render to Neon transfer finished. Newly inserted rows: ' + copied);
   } catch (error) {
-    await targetClient.query('ROLLBACK');
-    throw error;
+    if (targetClient) {
+      try { await targetClient.query('ROLLBACK'); } catch { /* transaction may not have started */ }
+    }
+    console.error(
+      'WARNING: Legacy Render to Neon transfer did not finish. The Neon schema is migrated and the API can start, but legacy data remains unverified. Keep the old database; retry transfer after its network access is restored.',
+      error
+    );
   } finally {
-    targetClient.release();
-    sourceClient.release();
+    targetClient?.release();
+    sourceClient?.release();
     await source.end();
   }
 } else {
   console.log('Legacy transfer skipped: source or Neon connection is not configured.');
 }
 
-for (const file of ['001_initial.sql', '002_team_payroll.sql']) {
-  const sql = await readFile(new URL('../db/migrations/' + file, import.meta.url), 'utf8');
-  await pool.query(sql);
-  console.log('Database migration applied: ' + file);
-}
 await pool.end();
