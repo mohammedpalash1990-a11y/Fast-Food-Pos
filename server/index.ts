@@ -41,6 +41,18 @@ app.post('/api/customers',authenticate,allow('owner','manager','cashier'),asyncR
   });
   res.status(201).json({customer});
 }));
+app.patch('/api/customers/:id',authenticate,allow('owner','manager','cashier'),asyncRoute(async(req:AuthedRequest,res)=>{
+  const parsed=schema.customer.safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Invalid customer data',details:parsed.error.flatten()});
+  const d=parsed.data;
+  const customer=await inTransaction(async client=>{
+    const updated=await client.query('UPDATE customers SET name=$1,phone=$2,address=$3 WHERE id=$4 AND organization_id=$5 RETURNING id,name,phone,address,loyalty_points AS "loyaltyPoints"',[d.name,d.phone,d.address,String(req.params.id),req.user!.organizationId]);
+    if(!updated.rowCount)throw Object.assign(new Error('Customer not found'),{status:404});
+    await audit(client,req.user!,'customer.updated','customer',updated.rows[0].id,d);
+    return updated.rows[0];
+  });
+  res.json({customer});
+}));
 app.get('/api/categories',authenticate,asyncRoute(async(req:AuthedRequest,res)=>{const rows=await pool.query('SELECT c.id,c.name,COUNT(p.id)::int AS product_count FROM categories c LEFT JOIN products p ON p.category_id=c.id AND p.active=true WHERE c.organization_id=$1 GROUP BY c.id ORDER BY c.name',[req.user!.organizationId]);res.json({categories:rows.rows});}));
 app.post('/api/categories',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{const parsed=schema.category.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Enter a category name'});const result=await inTransaction(async client=>{const exists=await client.query('SELECT id FROM categories WHERE organization_id=$1 AND lower(name)=lower($2)',[req.user!.organizationId,parsed.data.name]);if(exists.rowCount)throw Object.assign(new Error('Category already exists'),{status:409});const inserted=await client.query('INSERT INTO categories(organization_id,name) VALUES($1,$2) RETURNING id,name',[req.user!.organizationId,parsed.data.name]);await audit(client,req.user!,'category.created','category',inserted.rows[0].id,parsed.data);return inserted.rows[0];});res.status(201).json({category:result});}));
 app.patch('/api/categories/:id',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{const parsed=schema.category.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Enter a category name'});const result=await inTransaction(async client=>{const duplicate=await client.query('SELECT id FROM categories WHERE organization_id=$1 AND lower(name)=lower($2) AND id<>$3',[req.user!.organizationId,parsed.data.name,String(req.params.id)]);if(duplicate.rowCount)throw Object.assign(new Error('Category already exists'),{status:409});const updated=await client.query('UPDATE categories SET name=$1 WHERE id=$2 AND organization_id=$3 RETURNING id,name',[parsed.data.name,String(req.params.id),req.user!.organizationId]);if(!updated.rowCount)throw Object.assign(new Error('Category not found'),{status:404});await audit(client,req.user!,'category.updated','category',updated.rows[0].id,parsed.data);return updated.rows[0];});res.json({category:result});}));
