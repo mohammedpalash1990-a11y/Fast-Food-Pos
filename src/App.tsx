@@ -9,6 +9,8 @@ const safeRead = <T,>(key: string, initial: T): T => {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : initial; } catch { return initial; }
 };
 const save = (key: string, value: unknown) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Storage can be disabled or full; app remains usable for this session. */ } };
+const readSession = (key: string) => { try { return sessionStorage.getItem(key) || ''; } catch { return ''; } };
+const saveSession = (key: string, value: string) => { try { if (value) sessionStorage.setItem(key, value); else sessionStorage.removeItem(key); } catch { /* Session storage may be unavailable; login remains usable until reload. */ } };
 const moduleGroups = [
   { title: 'Workspace', items: [{ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }, { id: 'pos', label: 'POS / Billing', icon: ShoppingCart }, { id: 'orders', label: 'Orders', icon: ClipboardList }, { id: 'kitchen', label: 'Kitchen Display', icon: ChefHat }, { id: 'tables', label: 'Tables Management', icon: Table2 }, { id: 'reservations', label: 'Reservations', icon: CalendarDays }] },
   { title: 'Restaurant', items: [{ id: 'customers', label: 'Customers', icon: Users }, { id: 'menu', label: 'Menu Management', icon: BookOpen }, { id: 'categories', label: 'Categories', icon: Grid2X2 }, { id: 'inventory', label: 'Inventory', icon: Boxes }, { id: 'recipes', label: 'Recipes & Ingredients', icon: Package }, { id: 'suppliers', label: 'Suppliers', icon: BriefcaseBusiness }, { id: 'purchases', label: 'Purchase Management', icon: ShoppingBag }, { id: 'delivery', label: 'Delivery Management', icon: Bike }] },
@@ -52,8 +54,8 @@ function App() {
   const [apiBase, setApiBase] = useState(() => safeRead('musafir-api-base', import.meta.env.VITE_API_URL || ''));
   const [apiEmail, setApiEmail] = useState('');
   const [apiPassword, setApiPassword] = useState('');
-  const [apiToken, setApiToken] = useState('');
-  const [apiBranchId, setApiBranchId] = useState('');
+  const [apiToken, setApiToken] = useState(() => readSession('musafir-api-token'));
+  const [apiBranchId, setApiBranchId] = useState(() => readSession('musafir-api-branch'));
   const [apiConnected, setApiConnected] = useState(false);
   const [apiBusy, setApiBusy] = useState(false);
   const [apiMessage, setApiMessage] = useState('');
@@ -73,6 +75,21 @@ function App() {
   useEffect(() => { save('musafir-purchases', purchases); }, [purchases]);
   useEffect(() => { save('musafir-payroll', payroll); }, [payroll]);
   useEffect(() => { save('musafir-audit', logs); }, [logs]);
+
+  useEffect(() => {
+    if (!apiToken || !apiBranchId || !apiBase) return;
+    let active = true;
+    fetch(`${apiBase.replace(/\/$/, '')}/api/auth/me`, { headers: { Authorization: `Bearer ${apiToken}` } })
+      .then(response => { if (!response.ok) throw new Error('Session expired'); return response.json(); })
+      .then(() => { if (active) setApiConnected(true); })
+      .catch(() => {
+        if (!active) return;
+        saveSession('musafir-api-token', '');
+        saveSession('musafir-api-branch', '');
+        setApiToken(''); setApiBranchId(''); setApiConnected(false);
+      });
+    return () => { active = false; };
+  }, [apiBase, apiToken, apiBranchId]);
 
   useEffect(() => {
     if (!apiConnected || !apiToken || !apiBranchId) return;
@@ -365,6 +382,8 @@ function App() {
       setProducts(mappedProducts.filter((_:Product,index:number)=>productData.products[index].active));
       setInactiveMenuProducts(mappedProducts.filter((_:Product,index:number)=>!productData.products[index].active));
       setApiBase(base); save('musafir-api-base', base);
+      saveSession('musafir-api-token', login.token);
+      saveSession('musafir-api-branch', branchId);
       setApiToken(login.token); setApiBranchId(branchId); setApiConnected(true);
       setApiPassword('');
       setApiMessage(`Connected to branch ${branchId}. ${productData.products.filter((item: {active:boolean})=>item.active).length} menu products, ${orderData.orders.length} orders and ${inventoryData.items.length} inventory items loaded.`);
@@ -374,6 +393,7 @@ function App() {
     } finally { setApiBusy(false); }
   };
   const disconnectBackend = () => {
+    saveSession('musafir-api-token', ''); saveSession('musafir-api-branch', '');
     setApiToken(''); setApiBranchId(''); setApiConnected(false); setProducts(demoProducts);
     setApiMessage('Disconnected. POS is using local demo data.');
   };
