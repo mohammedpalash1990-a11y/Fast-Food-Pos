@@ -1025,18 +1025,18 @@ function App() {
     setLogs(current => [{ id: `employee-edit-${Date.now()}`, title: 'Employee details updated', detail: name.trim(), time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
     flash(apiConnected ? 'Employee updated in PostgreSQL.' : 'Employee details updated.');
   };
-  const updateAttendance = async (employee: Employee) => {
+  const updateAttendance = async (employee: Employee, date = localDate()) => {
     const statuses: Employee['status'][] = ['Present', 'Absent', 'On Leave'];
     const next = statuses[(statuses.indexOf(employee.status) + 1) % statuses.length];
     if (apiConnected && apiToken) {
       try {
-        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/attendance`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`}, body:JSON.stringify({employeeId:employee.id,date:localDate(),status:next}) });
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/attendance`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`}, body:JSON.stringify({employeeId:employee.id,date,status:next}) });
         const result = await response.json();
         if (!response.ok || !result.attendance) throw new Error(result.error || 'Attendance was not saved.');
       } catch(error) { flash(error instanceof Error ? error.message : 'Attendance was not saved.'); return; }
     }
-    if (attendanceDate === localDate()) setEmployees(current => current.map(item => item.id === employee.id ? { ...item, status: next } : item));
-    setAttendanceRows(current => current.map(item => item.employeeId === employee.id ? { ...item, status: next } : item));
+    if (date === localDate()) setEmployees(current => current.map(item => item.id === employee.id ? { ...item, status: next } : item));
+    if (date === attendanceDate) setAttendanceRows(current => current.map(item => item.employeeId === employee.id ? { ...item, status: next } : item));
     setLogs(current => [{ id: `attendance-${Date.now()}`, title: 'Attendance updated', detail: `${employee.name} · ${next}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
   };
   const changeEmployeeActive = async (employee: Employee, active: boolean) => {
@@ -1060,7 +1060,7 @@ function App() {
   </section>;
   const attendanceView = (): ReactNode => <section className={`${panel} p-5`}>
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Daily operations','Staff attendance',apiConnected?'Choose a date and record one status per employee.':'Cycle each employee through Present, Absent and On Leave.')}{apiConnected&&<input type="date" value={attendanceDate} max={localDate()} onChange={event=>{if(event.target.value)setAttendanceDate(event.target.value);}} className="rounded-lg border border-white/10 bg-transparent px-3 py-2 text-xs text-slate-200"/>}</div>
-    <div className="space-y-2">{(apiConnected?attendanceRows:employees.filter(employee=>employee.active!==false).map(employee=>({employeeId:employee.id,name:employee.name,role:employee.role,shift:employee.shift,status:employee.status}))).map(row=>{const employee=employees.find(item=>item.id===row.employeeId);return <div key={row.employeeId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white/[.035] p-3"><div><div className="text-sm font-medium text-white">{row.name}</div><div className="mt-1 text-xs text-slate-500">{row.role} · {row.shift}</div></div><div className="flex items-center gap-2"><span className="text-xs text-slate-400">{row.status}</span>{canManageHr&&employee&&<button onClick={()=>updateAttendance({...employee,status:row.status})} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-200">Change status</button>}</div></div>;})}</div>
+    <div className="space-y-2">{(apiConnected?attendanceRows:employees.filter(employee=>employee.active!==false).map(employee=>({employeeId:employee.id,name:employee.name,role:employee.role,shift:employee.shift,status:employee.status}))).map(row=>{const employee=employees.find(item=>item.id===row.employeeId);return <div key={row.employeeId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white/[.035] p-3"><div><div className="text-sm font-medium text-white">{row.name}</div><div className="mt-1 text-xs text-slate-500">{row.role} · {row.shift}</div></div><div className="flex items-center gap-2"><span className="text-xs text-slate-400">{row.status}</span>{canManageHr&&employee&&<button onClick={()=>updateAttendance({...employee,status:row.status},attendanceDate)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-200">Change status</button>}</div></div>;})}</div>
   </section>;
   const recordSalaryAdvance = async (employee: Employee) => {
     const amount = Number(window.prompt(`Advance amount for ${employee.name} (SAR)`, '0'));
