@@ -1188,8 +1188,8 @@ function App() {
   const editProductRecipe = async (product: Product) => {
     if (!apiConnected || !apiToken) { flash('Connect the live POS database before editing recipes.'); return; }
     if (!inventory.length) { flash('Add inventory ingredients before creating a recipe.'); return; }
-    const options = inventory.map((item,index)=>`${index+1}. ${item.name} (${item.unit})`).join('\\n');
-    const selected = Number(window.prompt(`Select ingredient to add or update for ${product.name}:\\n${options}\\nEnter 0 to clear this recipe.`, '1'));
+    const options = inventory.map((item,index)=>`${index+1}. ${item.name} (${item.unit})`).join('\n');
+    const selected = Number(window.prompt(`Select ingredient to add or update for ${product.name}:\n${options}\nEnter 0 to clear this recipe.`, '1'));
     if (!Number.isInteger(selected) || selected<0 || selected>inventory.length) { flash('Select a valid ingredient number.'); return; }
     let recipe = [...product.recipe];
     if (selected===0) recipe=[];
@@ -1204,7 +1204,7 @@ function App() {
       if(quantity>0)recipe.push({ingredientId:ingredient.id,name:ingredient.name,qty:quantity,unit:ingredient.unit});
     }
     try {
-      const response=await fetch(`${apiBase.replace(/\\/$/,'')}/api/products/${encodeURIComponent(product.id)}/recipe`,{method:'PUT',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({items:recipe.map(item=>({ingredientId:item.ingredientId,quantity:item.qty}))})});
+      const response=await fetch(`${apiBase.replace(/\/$/,'')}/api/products/${encodeURIComponent(product.id)}/recipe`,{method:'PUT',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({items:recipe.map(item=>({ingredientId:item.ingredientId,quantity:item.qty}))})});
       const result=await response.json();
       if(!response.ok||!Array.isArray(result.recipe))throw new Error(result.error||'Recipe could not be saved.');
       const saved=result.recipe.map((item:{ingredientId:string;name:string;qty:string|number;unit:string})=>({ingredientId:item.ingredientId,name:item.name,qty:Number(item.qty),unit:item.unit}));
