@@ -19,7 +19,49 @@ npm run api:dev
 
 In another terminal run `npm run dev`. Vite proxies `/api` requests to `http://localhost:3001`. Health check: `http://localhost:3001/api/health`.
 
-Local demo credentials come from `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`. For Render production, set `NEON_DATABASE_URL`, `JWT_SECRET` (at least 32 random characters), `BOOTSTRAP_ADMIN_EMAIL`, and `BOOTSTRAP_ADMIN_PASSWORD` (12–128 characters). Optional `BOOTSTRAP_RESTAURANT_NAME` and `BOOTSTRAP_BRANCH_NAME` customize the first organization and branch. The production seed creates only the first owner and branch; it does not insert demo products or sample transactions. The bootstrap is idempotent and does not reset an existing owner's password. Never commit `.env` or put credentials in source control. Use HTTPS, database backups, and a secret manager. For legacy Render-to-Neon transfer, keep the old Render connection in `DATABASE_URL` and the Neon destination in `NEON_DATABASE_URL`. Startup applies both PostgreSQL schema migrations to Neon first. Transfer is a dry run by default (`LEGACY_TRANSFER_COMMIT=false`): the source is read-only, the Neon transaction is rolled back, and every supported source row is checked for exact column equality (including NULL values) before the dry run passes. Unsupported tables, missing columns/tables, primary-key mismatches, or conflicting unique keys stop the transfer. Only set `LEGACY_TRANSFER_COMMIT=true` after a successful reviewed dry run and a verified backup/recovery plan. Never delete or overwrite the old Render database until the transfer has been independently verified.
+Local demo credentials come from `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`. For Render production, set `NEON_DATABASE_URL`, `JWT_SECRET` (at least 32 random characters), `BOOTSTRAP_ADMIN_EMAIL`, and `BOOTSTRAP_ADMIN_PASSWORD` (12–128 characters). Optional `BOOTSTRAP_RESTAURANT_NAME` and `BOOTSTRAP_BRANCH_NAME` customize the first organization and branch. The production seed creates only the first owner and branch; it does not insert demo products or sample transactions. The bootstrap is idempotent and does not reset an existing owner's password. Never commit `.env` or put credentials in source control. Use HTTPS, database backups, and a secret manager. Legacy data is moved with the guarded tooling described below — never delete or overwrite the old Render database until the transfer has been independently verified.
+
+## Legacy Render → Neon PostgreSQL transfer
+
+Production data lives in the old Render PostgreSQL database; the API writes to Neon.
+`npm run db:transfer` moves it with verification, and **never modifies or deletes the
+legacy database**.
+
+```sh
+# 1. schema only, on Neon (DATABASE_URL = legacy Render, NEON_DATABASE_URL = Neon)
+npm run db:migrate
+
+# 2. read-only dry run: prints a table plan, verifies every row, then rolls back
+npm run db:transfer
+
+# 3. only after explicit approval of the dry-run report
+LEGACY_TRANSFER_COMMIT=true npm run db:transfer:commit
+```
+
+**Safety model**
+
+- The source session runs `default_transaction_read_only = on` inside a
+  `REPEATABLE READ READ ONLY` transaction, so PostgreSQL itself refuses any write.
+- Exporting `LEGACY_TRANSFER_COMMIT=true` is not enough: `--commit` must be passed
+  too. Without `--commit` the command is always a dry run that rolls back.
+- Source and target are compared before connecting; the same database is refused.
+- Schema drift, missing tables/columns, primary-key mismatches and duplicate
+  conflicts are detected **before** copying and reported with a concrete remedy.
+  Optional repairs (`LEGACY_TRANSFER_ADD_MISSING_COLUMNS`,
+  `LEGACY_TRANSFER_REPAIR_DUPLICATES`) keep every legacy row instead of dropping data.
+- Every copied row is re-read from Neon and compared column-by-column with
+  `IS NOT DISTINCT FROM` (so NULLs and microsecond timestamps must match exactly),
+  then row counts are reconciled per table.
+- All writes to Neon — data and schema changes — happen in a single transaction.
+  Any failure rolls everything back, so a partial migration is impossible.
+
+Reports land in `reports/legacy-transfer-{dry-run,commit}-<timestamp>.json`
+(git-ignored). Full blocker → remedy table and env reference:
+[docs/legacy-transfer-runbook.md](docs/legacy-transfer-runbook.md).
+
+Tests: `npm test` (unit rules, no database) and `npm run test:transfer`
+(end-to-end against two real PostgreSQL databases via
+`LEGACY_TEST_DATABASE_URL` / `NEON_TEST_DATABASE_URL`).
 
 ## Backend endpoints delivered
 
@@ -43,7 +85,10 @@ The existing mobile-responsive admin UI and local demo workflows remain. The API
 ```sh
 npm run build
 npm run typecheck:server
-npm run db:migrate
+npm run db:migrate           # schema only
+npm run db:transfer          # legacy -> Neon dry run (read-only)
 npm run db:seed
 npm run api:dev
+npm test                     # unit tests
+npm run test:integration     # API + transfer integration tests (needs PostgreSQL)
 ```
