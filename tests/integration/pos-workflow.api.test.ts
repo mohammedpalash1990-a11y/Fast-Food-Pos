@@ -28,14 +28,14 @@ async function call(method: string, path: string, body?: unknown, idempotencyKey
   return { status: response.status, body: parsed };
 }
 
-async function createOrder(orderType: 'Dine-in' | 'Takeaway' | 'Pickup' | 'Home Delivery', paymentMethod: 'Cash' | 'Mada', extra: Record<string, unknown> = {}) {
+async function createOrder(orderType: 'Dine-in' | 'Takeaway' | 'Pickup' | 'Home Delivery', paymentMethod: 'Cash' | 'Mada', extra: Record<string, unknown> = {}, idempotencyKey?: string) {
   return call('POST', '/api/orders', {
     orderType,
     paymentMethod,
     taxRate: 0.15,
     items: [{ productId: ids.product, quantity: 1 }],
     ...extra
-  });
+  }, idempotencyKey);
 }
 
 before(async () => {
