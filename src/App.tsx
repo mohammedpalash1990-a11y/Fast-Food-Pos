@@ -349,6 +349,7 @@ function App() {
       return amount && item.trackStock ? [{ id: `consume-${number}-${item.id}`, title: 'Stock consumed', detail: `Order #${number} · ${item.name} · -${amount} ${item.unit}`, time }] : [];
     });
     setOrders(current => [order, ...current]);
+    if(selectedTableId)setRestaurantTables(current=>current.map(table=>table.id===selectedTableId?{...table,status:'Occupied'}:table));
     setLogs(current => [
       { id: `log-${Date.now()}`, title: 'Sale completed', detail: `Order #${number} · ${currency(total)} · ${payMethod}`, time },
       ...stockLogs,
