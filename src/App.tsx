@@ -26,7 +26,8 @@ function App() {
   const [view, setView] = useState('dashboard');
   const [reportRange, setReportRange] = useState('This month');
   const [products, setProducts] = useState<Product[]>(() => safeRead('musafir-products', demoProducts));
-  const [menuCategories, setMenuCategories] = useState<{id:string;name:string;product_count?:number}[]>(() => categories.map((name,index)=>({id:`local-${index}`,name})));
+  const [menuCategories, setMenuCategories] = useState<{id:string;name:string;product_count?:number}[]>(() => safeRead('musafir-menu-categories', categories.map((name,index)=>({id:`local-${index}`,name}))));
+  const [inactiveMenuProducts, setInactiveMenuProducts] = useState<Product[]>(() => safeRead('musafir-inactive-products', []));
   const [inventory, setInventory] = useState<InventoryItem[]>(() => safeRead('musafir-inventory', demoInventory));
   const [customers, setCustomers] = useState<Customer[]>(() => safeRead('musafir-customers', demoCustomers));
   const [orders, setOrders] = useState<Order[]>(() => safeRead('musafir-orders', demoOrders));
@@ -58,6 +59,8 @@ function App() {
   const backupInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { save('musafir-products', products); }, [products]);
+  useEffect(() => { save('musafir-menu-categories', menuCategories); }, [menuCategories]);
+  useEffect(() => { save('musafir-inactive-products', inactiveMenuProducts); }, [inactiveMenuProducts]);
   useEffect(() => { save('musafir-inventory', inventory); }, [inventory]);
   useEffect(() => { save('musafir-customers', customers); }, [customers]);
   useEffect(() => { save('musafir-orders', orders); }, [orders]);
@@ -312,17 +315,19 @@ function App() {
       const branchId = login.user?.branchId;
       if (!login.token || !branchId) throw new Error('Login response did not include a branch session.');
       const authHeaders = { Authorization: `Bearer ${login.token}` };
-      const [menuResponse, categoryResponse, ordersResponse, inventoryResponse, suppliersResponse, purchasesResponse] = await Promise.all([
+      const [menuResponse, categoryResponse, productsResponse, ordersResponse, inventoryResponse, suppliersResponse, purchasesResponse] = await Promise.all([
         fetch(`${base}/api/menu?branchId=${encodeURIComponent(branchId)}`),
         fetch(`${base}/api/categories`, { headers: authHeaders }),
+        fetch(`${base}/api/products`, { headers: authHeaders }),
         fetch(`${base}/api/orders?limit=150`, { headers: authHeaders }),
         fetch(`${base}/api/inventory`, { headers: authHeaders }),
         fetch(`${base}/api/suppliers`, { headers: authHeaders }),
         fetch(`${base}/api/purchases`, { headers: authHeaders })
       ]);
       const [menu, categoryData, orderData, inventoryData, supplierData, purchaseData] = await Promise.all([menuResponse.json(), categoryResponse.json(), ordersResponse.json(), inventoryResponse.json(), suppliersResponse.json(), purchasesResponse.json()]);
-      if (!menuResponse.ok || !Array.isArray(menu.products) || !menu.products.length) throw new Error(menu.error || 'No active menu products were returned for this branch.');
+      if (!menuResponse.ok || !Array.isArray(menu.products)) throw new Error(menu.error || 'Could not load the branch menu.');
       if (!categoryResponse.ok || !Array.isArray(categoryData.categories)) throw new Error(categoryData.error || 'Could not load menu categories.');
+      if (!productsResponse.ok || !Array.isArray(productData.products)) throw new Error(productData.error || 'Could not load product management data.');
       if (!ordersResponse.ok || !Array.isArray(orderData.orders)) throw new Error(orderData.error || 'Could not load branch order history.');
       if (!inventoryResponse.ok || !Array.isArray(inventoryData.items)) throw new Error(inventoryData.error || 'Could not load branch inventory.');
       if (!suppliersResponse.ok || !Array.isArray(supplierData.suppliers)) throw new Error(supplierData.error || 'Could not load branch suppliers.');
@@ -347,15 +352,12 @@ function App() {
         items: saved.items.map(item => ({ id:item.id, productId:item.productId || '', name:item.name, qty:Number(item.qty), unitPrice:Number(item.unitPrice) }))
       })));
       setMenuCategories(categoryData.categories);
-      setProducts(menu.products.map((item: { id:string; name:string; category?:string; price:string|number; image_url?:string }) => ({
-        id: item.id,
-        name: item.name,
-        category: (item.category || 'Snacks') as Product['category'],
-        price: Number(item.price),
-        image: item.image_url || '',
-        popularity: 0,
-        recipe: []
-      })));
+      const mappedProducts = productData.products.map((item: {id:string;name:string;category?:string;price:string|number;imageUrl?:string;image_url?:string;active:boolean}) => ({
+        id:item.id,name:item.name,category:(item.category||'Snacks') as Product['category'],price:Number(item.price),
+        image:item.imageUrl||item.image_url||'',popularity:0,recipe:[]
+      }));
+      setProducts(mappedProducts.filter((_:Product,index:number)=>productData.products[index].active));
+      setInactiveMenuProducts(mappedProducts.filter((_:Product,index:number)=>!productData.products[index].active));
       setApiBase(base); save('musafir-api-base', base);
       setApiToken(login.token); setApiBranchId(branchId); setApiConnected(true);
       setApiPassword('');
@@ -1088,17 +1090,34 @@ function App() {
       } catch(error){flash(error instanceof Error?error.message:'Product deactivate failed.');return;}
     }
     setProducts(current=>current.filter(item=>item.id!==product.id));
+    setInactiveMenuProducts(current=>[product,...current.filter(item=>item.id!==product.id)]);
     setCart(current=>current.filter(item=>item.productId!==product.id));
     flash('Product deactivated.');
+  };
+  const reactivateMenuProduct = async (product:Product) => {
+    if(apiConnected && apiToken) {
+      try {
+        const response=await fetch(`${apiBase.replace(/\/$/, '')}/api/products/${encodeURIComponent(product.id)}`,{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({active:true})});
+        const result=await response.json();
+        if(!response.ok||!result.product)throw new Error(result.error||'Product could not be reactivated.');
+      } catch(error){flash(error instanceof Error?error.message:'Product reactivation failed.');return;}
+    }
+    setInactiveMenuProducts(current=>current.filter(item=>item.id!==product.id));
+    setProducts(current=>[product,...current.filter(item=>item.id!==product.id)]);
+    flash('Product reactivated.');
   };
   const menuView = (): ReactNode => <section className={`${panel} p-5`}>
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Restaurant setup','Menu management','Create and maintain active menu products and selling prices.')}<button onClick={addMenuProduct} className="rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]"><Plus size={14} className="mr-1 inline"/>Add product</button></div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{products.map(product=><article key={product.id} className="rounded-xl border border-white/[.07] bg-[#191e24] p-4"><div className="flex items-start gap-3"><img src={product.image||'https://placehold.co/96x72?text=Menu'} alt={product.name} className="h-16 w-20 rounded-lg object-cover"/><div className="min-w-0 flex-1"><h3 className="truncate text-sm font-semibold text-white">{product.name}</h3><p className="mt-1 text-xs text-slate-500">{product.category}</p><p className="mt-1 text-sm font-semibold text-[#e7b943]">{currency(product.price)}</p></div></div><div className="mt-4 flex gap-2"><button onClick={()=>editMenuProduct(product)} className="flex-1 rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300">Edit</button><button onClick={()=>deactivateMenuProduct(product)} className="rounded-lg border border-rose-400/20 px-3 py-2 text-xs text-rose-300">Deactivate</button></div></article>)}</div>
     {!products.length&&<p className="py-10 text-center text-sm text-slate-500">No active menu products.</p>}
+    <div className="mt-7 border-t border-white/10 pt-5"><h3 className="mb-3 text-sm font-semibold text-slate-300">Inactive products ({inactiveMenuProducts.length})</h3>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{inactiveMenuProducts.map(product=><article key={product.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/[.07] bg-[#191e24] p-3 opacity-75"><div className="min-w-0"><div className="truncate text-sm text-white">{product.name}</div><div className="mt-1 text-xs text-slate-500">{product.category} · {currency(product.price)}</div></div><button onClick={()=>reactivateMenuProduct(product)} className="shrink-0 rounded-lg border border-emerald-400/20 px-3 py-2 text-xs text-emerald-300">Reactivate</button></article>)}</div>
+      {!inactiveMenuProducts.length&&<p className="text-xs text-slate-500">No inactive products.</p>}
+    </div>
   </section>;
   const categoriesView = (): ReactNode => <section className={`${panel} p-5`}>
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Restaurant setup','Menu categories','Organize products into clear categories for the POS menu.')}<button onClick={addCategory} className="rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]"><Plus size={14} className="mr-1 inline"/>Add category</button></div>
-    <div className="space-y-2">{menuCategories.map(item=><div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/[.07] bg-[#191e24] p-3"><div><div className="text-sm font-medium text-white">{item.name}</div><div className="mt-1 text-xs text-slate-500">{item.product_count??products.filter(product=>product.category===item.name).length} active products</div></div><div className="flex gap-2"><button onClick={()=>renameCategory(item)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300">Rename</button><button onClick={()=>deleteCategory(item)} className="rounded-lg border border-rose-400/20 px-3 py-2 text-xs text-rose-300">Delete</button></div></div>)}</div>
+    <div className="space-y-2">{menuCategories.map(item=><div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/[.07] bg-[#191e24] p-3"><div><div className="text-sm font-medium text-white">{item.name}</div><div className="mt-1 text-xs text-slate-500">{products.filter(product=>product.category===item.name).length} active products</div></div><div className="flex gap-2"><button onClick={()=>renameCategory(item)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300">Rename</button><button onClick={()=>deleteCategory(item)} className="rounded-lg border border-rose-400/20 px-3 py-2 text-xs text-rose-300">Delete</button></div></div>)}</div>
   </section>;
   const moduleMessages: Record<string,string> = { tables:'Table occupancy, seating and table transfer workflows are not implemented yet.', reservations:'Reservation scheduling and guest reminders are not implemented yet.', menu:'Menu editing and product creation are planned; current products are available in POS.', categories:'Category editing is not implemented yet; category filters are available in POS.', recipes:'Recipe editor and ingredient-to-stock mapping need completion.', purchases:'Record goods received, add quantities to inventory and track supplier credit locally.', delivery:'Dispatch assignment and courier tracking need completion.', expenses:'Record shop operating expenses, payment method and expense date; review daily and monthly totals.', employees:'Manage employee profiles, monthly salaries and shift details in local POS storage.', attendance:'Update daily employee attendance status in local POS storage.', payroll:'Create monthly payroll, track salary advances, and record full or partial Cash/Mada salary payments.', reports:'Dashboard includes actual order totals and item sales; date filtering/export reports need completion.', profit:'Reliable profit & loss requires recorded COGS, purchases, expenses and salaries; not yet implemented.',  discounts:'Coupon codes and discount authorization need completion.', roles:'Authentication and enforceable role permissions need a secure backend.', settings:'Restaurant and branch settings need completion.' };
   const selectedLabel = moduleGroups.flatMap(group=>group.items).find(item=>item.id===view)?.label || 'Dashboard';
