@@ -28,7 +28,7 @@ app.get('/api/auth/me',authenticate,asyncRoute(async(req:AuthedRequest,res)=>res
 app.get('/api/menu',asyncRoute(async(req,res)=>{const branchId=String(req.query.branchId||'');if(!branchId)return res.status(400).json({error:'branchId is required'});const result=await pool.query('SELECT p.id,p.name,p.sku,p.price,p.image_url,c.name AS category FROM products p LEFT JOIN categories c ON c.id=p.category_id JOIN branches b ON b.organization_id=p.organization_id WHERE p.active=true AND b.id=$1 ORDER BY c.name,p.name',[branchId]);res.json({products:result.rows});}));
 app.get('/api/customers',authenticate,allow('owner','manager','cashier','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{
   const rows=await pool.query(`SELECT c.id,c.name,c.phone,c.address,c.loyalty_points AS "loyaltyPoints",
-    COUNT(o.id)::int AS "orderCount",
+    COUNT(o.id) FILTER (WHERE o.status<>'Cancelled')::int AS "orderCount",
     COALESCE(SUM(o.total) FILTER (WHERE o.status<>'Cancelled'),0)::numeric(12,2) AS "lifetimeSpend",
     MAX(o.created_at) FILTER (WHERE o.status<>'Cancelled') AS "lastOrderAt"
     FROM customers c LEFT JOIN orders o ON o.customer_id=c.id AND o.organization_id=c.organization_id
