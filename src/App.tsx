@@ -374,9 +374,9 @@ function App() {
   const exportBackup = () => {
     const backup = {
       app: 'Musafir Fast Food POS',
-      formatVersion: 4,
+      formatVersion: 5,
       exportedAt: new Date().toISOString(),
-      data: { products, inventory, customers, orders, cart, employees, suppliers, expenses, purchases, payroll, logs }
+      data: { products, inactiveMenuProducts, menuCategories, inventory, customers, orders, cart, employees, suppliers, expenses, purchases, payroll, logs }
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -395,11 +395,13 @@ function App() {
       const parsed = JSON.parse(await file.text());
       const data = parsed?.data;
       const required = ['products', 'inventory', 'customers', 'orders', 'cart', 'employees', 'suppliers', 'logs'];
-      if (parsed?.app !== 'Musafir Fast Food POS' || ![1, 2, 3, 4].includes(parsed?.formatVersion) || !data || required.some(key => !Array.isArray(data[key])) || (data.expenses !== undefined && !Array.isArray(data.expenses)) || (data.purchases !== undefined && !Array.isArray(data.purchases)) || (data.payroll !== undefined && !Array.isArray(data.payroll))) {
+      if (parsed?.app !== 'Musafir Fast Food POS' || ![1, 2, 3, 4, 5].includes(parsed?.formatVersion) || !data || required.some(key => !Array.isArray(data[key])) || (data.expenses !== undefined && !Array.isArray(data.expenses)) || (data.purchases !== undefined && !Array.isArray(data.purchases)) || (data.payroll !== undefined && !Array.isArray(data.payroll)) || (data.inactiveMenuProducts !== undefined && !Array.isArray(data.inactiveMenuProducts)) || (data.menuCategories !== undefined && !Array.isArray(data.menuCategories))) {
         throw new Error('This is not a valid Musafir POS backup file.');
       }
       if (!window.confirm('Restore this backup? Current POS data on this device will be replaced.')) return;
       setProducts(data.products);
+      setInactiveMenuProducts(Array.isArray(data.inactiveMenuProducts) ? data.inactiveMenuProducts : []);
+      setMenuCategories(Array.isArray(data.menuCategories) ? data.menuCategories : categories.map((name:string,index:number)=>({id:`local-${index}`,name})));
       setInventory(data.inventory);
       setCustomers(data.customers);
       setOrders(data.orders);
@@ -426,7 +428,7 @@ function App() {
       <input ref={backupInputRef} type="file" accept="application/json,.json" className="hidden" onChange={event => { void importBackup(event.target.files?.[0]); }} />
     </div>
     {backupMessage && <p role="status" className="mt-3 text-xs text-slate-300">{backupMessage}</p>}
-    <p className="mt-3 text-xs leading-5 text-amber-200/70">Backups contain saved orders, products, stock, customers, employees, suppliers, purchases, expenses and audit history. Store backup files securely. This does not copy data from the connected server database.</p>
+    <p className="mt-3 text-xs leading-5 text-amber-200/70">Backups contain active and inactive menu products, categories, orders, stock, customers, employees, suppliers, purchases, expenses and audit history. Store backup files securely. This does not copy data from the connected server database.</p>
   </section><section className={`${panel} max-w-2xl p-5 md:p-7`}>
     <div className="mb-5">{heading('System integration','Backend connection','Connect this POS to the live Saudi branch database.')}</div>
     <label className="mb-1 block text-xs text-slate-400">Backend API URL</label>
