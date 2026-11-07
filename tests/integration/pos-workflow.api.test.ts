@@ -79,26 +79,19 @@ before(async () => {
 
 after(async () => {
   if (ids.org) {
-    await db.query('BEGIN');
-    try {
-      await db.query('DELETE FROM payments WHERE organization_id=$1', [ids.org]);
-      await db.query('DELETE FROM stock_movements WHERE branch_id=$1', [ids.branch]);
-      await db.query('DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE organization_id=$1)', [ids.org]);
-      await db.query('DELETE FROM orders WHERE organization_id=$1', [ids.org]);
-      await db.query('DELETE FROM recipes WHERE product_id=$1', [ids.product]);
-      await db.query('DELETE FROM restaurant_tables WHERE branch_id=$1', [ids.branch]);
-      await db.query('DELETE FROM products WHERE organization_id=$1', [ids.org]);
-      await db.query('DELETE FROM ingredients WHERE branch_id=$1', [ids.branch]);
-      await db.query('DELETE FROM audit_logs WHERE organization_id=$1', [ids.org]);
-      await db.query('DELETE FROM users WHERE organization_id=$1', [ids.org]);
-      await db.query('DELETE FROM categories WHERE organization_id=$1', [ids.org]);
-      await db.query('DELETE FROM branches WHERE id=$1', [ids.branch]);
-      await db.query('DELETE FROM organizations WHERE id=$1', [ids.org]);
-      await db.query('COMMIT');
-    } catch (error) {
-      await db.query('ROLLBACK');
-      throw error;
-    }
+    await db.query('DELETE FROM payments WHERE organization_id=$1', [ids.org]);
+    await db.query('DELETE FROM stock_movements WHERE branch_id=$1', [ids.branch]);
+    await db.query('DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE organization_id=$1)', [ids.org]);
+    await db.query('DELETE FROM orders WHERE organization_id=$1', [ids.org]);
+    await db.query('DELETE FROM recipes WHERE product_id=$1', [ids.product]);
+    await db.query('DELETE FROM restaurant_tables WHERE branch_id=$1', [ids.branch]);
+    await db.query('DELETE FROM products WHERE organization_id=$1', [ids.org]);
+    await db.query('DELETE FROM ingredients WHERE branch_id=$1', [ids.branch]);
+    await db.query('DELETE FROM audit_logs WHERE organization_id=$1', [ids.org]);
+    await db.query('DELETE FROM users WHERE organization_id=$1', [ids.org]);
+    await db.query('DELETE FROM categories WHERE organization_id=$1', [ids.org]);
+    await db.query('DELETE FROM branches WHERE id=$1', [ids.branch]);
+    await db.query('DELETE FROM organizations WHERE id=$1', [ids.org]);
   }
   await db.end();
 });
