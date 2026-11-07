@@ -19,7 +19,7 @@ npm run api:dev
 
 In another terminal run `npm run dev`. Vite proxies `/api` requests to `http://localhost:3001`. Health check: `http://localhost:3001/api/health`.
 
-Seed admin credentials come from `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`. Never commit `.env`; disable/delete the seeded account and provision real users before exposing this service. JWT signing key must be at least 32 characters. Use HTTPS, a strong database password, backups, and a secret manager in deployment.
+Local demo credentials come from `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`. For Render production, set `NEON_DATABASE_URL`, `JWT_SECRET` (at least 32 random characters), `BOOTSTRAP_ADMIN_EMAIL`, and `BOOTSTRAP_ADMIN_PASSWORD` (12–128 characters). Optional `BOOTSTRAP_RESTAURANT_NAME` and `BOOTSTRAP_BRANCH_NAME` customize the first organization and branch. The production seed creates only the first owner and branch; it does not insert demo products or sample transactions. The bootstrap is idempotent and does not reset an existing owner's password. Never commit `.env` or put credentials in source control. Use HTTPS, database backups, and a secret manager. If the legacy `DATABASE_URL` is configured alongside Neon, startup attempts a non-destructive, conflict-safe transfer of supported legacy tables; a connection failure is logged as a warning and does not block the API, so the old database must be retained until transfer is independently verified.
 
 ## Backend endpoints delivered
 
