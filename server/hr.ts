@@ -58,6 +58,8 @@ const schemas = {
   periodQuery: z.object({ period: period.optional() })
 };
 
+export const hrSchemas = schemas;
+
 const READ_ROLES = ['owner', 'manager', 'accountant'];
 const MANAGE_ROLES = ['owner', 'manager'];
 const PAY_ROLES = ['owner', 'manager', 'accountant'];
