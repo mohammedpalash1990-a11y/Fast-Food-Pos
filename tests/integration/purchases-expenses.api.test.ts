@@ -46,9 +46,13 @@ before(async () => {
     'INSERT INTO ingredients(organization_id,branch_id,sku,name,unit,stock,track_stock,unit_cost) VALUES($1,$2,$3,$4,$5,10,true,2) RETURNING id',
     [org, branch, 'ING-' + suffix, 'Test Flour', 'kg']
   )).rows[0].id;
+  const foreignIngredient = (await db.query(
+    'INSERT INTO ingredients(organization_id,branch_id,sku,name,unit,stock,track_stock,unit_cost) VALUES($1,$2,$3,$4,$5,5,true,1) RETURNING id',
+    [org, otherBranch, 'FOREIGN-' + suffix, 'Other Branch Flour', 'kg']
+  )).rows[0].id;
   tokens.owner = jwt.sign({ sub: owner }, process.env.JWT_SECRET!, { expiresIn: '8h', issuer: 'musafir-pos' });
   tokens.cashier = jwt.sign({ sub: cashier }, process.env.JWT_SECRET!, { expiresIn: '8h', issuer: 'musafir-pos' });
-  Object.assign(ids, { org, branch, otherBranch, owner, cashier, ingredient });
+  Object.assign(ids, { org, branch, otherBranch, owner, cashier, ingredient, foreignIngredient });
 });
 
 after(async () => {
@@ -114,7 +118,7 @@ test('purchase validation and branch scope reject overpayment, foreign-branch st
     supplierId: ids.supplier, invoiceNumber: 'CASH-' + suffix, paid: 0, items: [{ ingredientId: ids.ingredient, quantity: 1, unitCost: 1 }]
   })).status, 403);
   assert.equal((await call('POST', '/api/purchases', tokens.owner, {
-    supplierId: ids.supplier, invoiceNumber: 'BRANCH-' + suffix, paid: 0, items: [{ ingredientId: ids.foreignIngredient || randomUUID(), quantity: 1, unitCost: 1 }]
+    supplierId: ids.supplier, invoiceNumber: 'BRANCH-' + suffix, paid: 0, items: [{ ingredientId: ids.foreignIngredient, quantity: 1, unitCost: 1 }]
   })).status, 404);
   const count = await db.query('SELECT count(*)::int AS total FROM purchases WHERE organization_id=$1', [ids.org]);
   assert.equal(count.rows[0].total, 1);
