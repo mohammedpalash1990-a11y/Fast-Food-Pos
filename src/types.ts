@@ -77,7 +77,7 @@ export interface Employee {
   name: string;
   role: string;
   shift: string;
-  status: 'Present' | 'Absent' | 'On Leave';
+  status: 'Present' | 'Absent' | 'On Leave' | 'Not marked';
   salary: number;
   advance: number;
 }
