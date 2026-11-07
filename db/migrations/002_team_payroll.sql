@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS payroll_records (
   period text NOT NULL CHECK(period ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),
   base_salary numeric(12,2) NOT NULL CHECK(base_salary>=0),
   bonus numeric(12,2) NOT NULL DEFAULT 0 CHECK(bonus>=0),
+  deduction numeric(12,2) NOT NULL DEFAULT 0 CHECK(deduction>=0),
   advance_deduction numeric(12,2) NOT NULL DEFAULT 0 CHECK(advance_deduction>=0),
   net_salary numeric(12,2) NOT NULL CHECK(net_salary>=0),
   created_by uuid REFERENCES users ON DELETE SET NULL,
@@ -68,3 +69,6 @@ CREATE TABLE IF NOT EXISTS payroll_payments (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS payroll_payments_payroll_idx ON payroll_payments(payroll_id,created_at DESC);
+
+-- Upgrade databases where the payroll table was created before other deductions were supported.
+ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS deduction numeric(12,2) NOT NULL DEFAULT 0 CHECK(deduction>=0);
