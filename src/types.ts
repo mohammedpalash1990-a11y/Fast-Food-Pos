@@ -39,6 +39,9 @@ export interface Customer {
   phone: string;
   address: string;
   loyaltyPoints: number;
+  orderCount?: number;
+  lifetimeSpend?: number;
+  lastOrderAt?: string;
   favoriteItems: string[];
 }
 
