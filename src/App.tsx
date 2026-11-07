@@ -26,7 +26,7 @@ type DeliveryDriver = { id:string; display_name:string };
 type ExpenseRecord = { id: string; date: string; category: string; description: string; amount: number; paymentMethod: PaymentMethod; createdAt: string };
 type PurchaseRecord = { id: string; date: string; supplierId: string; supplierName: string; inventoryId: string; itemName: string; quantity: number; unit: string; unitCost: number; total: number; paid: number; paymentStatus: 'Paid' | 'Part-paid' | 'Credit'; paymentMethod?: PaymentMethod; createdAt: string };
 type PayrollPayment = { id: string; amount: number; paymentMethod: PaymentMethod; date: string; createdAt: string };
-type PayrollRecord = { id: string; employeeId: string; employeeName: string; period: string; baseSalary: number; bonus: number; deduction: number; advanceDeduction: number; netSalary: number; payments: PayrollPayment[]; createdAt: string };
+type PayrollRecord = { id: string; employeeId: string; employeeName: string; period: string; baseSalary: number; bonus: number; deduction: number; otherDeduction?: number; deductionNote?: string; advanceDeduction: number; netSalary: number; payments: PayrollPayment[]; createdAt: string };
 
 function App() {
   const [view, setView] = useState('dashboard');
@@ -38,7 +38,7 @@ function App() {
   const [customers, setCustomers] = useState<Customer[]>(() => safeRead('musafir-customers', demoCustomers));
   const [orders, setOrders] = useState<Order[]>(() => safeRead('musafir-orders', demoOrders));
   const [cart, setCart] = useState<CartItem[]>(() => safeRead('musafir-cart', []));
-  const [employees, setEmployees] = useState(() => safeRead('musafir-employees', demoEmployees));
+  const [employees, setEmployees] = useState<Employee[]>(() => safeRead('musafir-employees', demoEmployees));
   const [suppliers, setSuppliers] = useState(() => safeRead('musafir-suppliers', demoSuppliers));
   const [expenses, setExpenses] = useState<ExpenseRecord[]>(() => safeRead('musafir-expenses', []));
   const [purchases, setPurchases] = useState<PurchaseRecord[]>(() => safeRead<PurchaseRecord[]>('musafir-purchases', []).map(item => ({ ...item, paid: Number(item.paid ?? (item.paymentStatus === 'Paid' ? item.total : 0)) })));
@@ -83,11 +83,15 @@ function App() {
   useEffect(() => { save('musafir-customers', customers); }, [customers]);
   useEffect(() => { save('musafir-orders', orders); }, [orders]);
   useEffect(() => { save('musafir-cart', cart); }, [cart]);
-  useEffect(() => { save('musafir-employees', employees); }, [employees]);
+  useEffect(() => { if (!apiConnected) save('musafir-employees', employees); }, [employees, apiConnected]);
   useEffect(() => { save('musafir-suppliers', suppliers); }, [suppliers]);
   useEffect(() => { save('musafir-expenses', expenses); }, [expenses]);
   useEffect(() => { save('musafir-purchases', purchases); }, [purchases]);
-  useEffect(() => { save('musafir-payroll', payroll); }, [payroll]);
+  useEffect(() => { if (!apiConnected) save('musafir-payroll', payroll); }, [payroll, apiConnected]);
+  useEffect(() => { if (!apiConnected) return; try { localStorage.removeItem('musafir-employees'); localStorage.removeItem('musafir-payroll'); } catch { /* Storage may be unavailable. */ } }, [apiConnected]);
+  const hrRole = apiConnected ? apiRole : 'owner';
+  const canManageHr = ['owner', 'manager'].includes(hrRole);
+  const canViewPayroll = ['owner', 'manager', 'accountant'].includes(hrRole);
   useEffect(() => { save('musafir-audit', logs); }, [logs]);
   useEffect(() => { save('musafir-reservations', reservations); }, [reservations]);
   useEffect(() => { save('musafir-restaurant-tables', restaurantTables); }, [restaurantTables]);
@@ -161,18 +165,18 @@ function App() {
         if (employeesResponse.ok) {
           const employeeData = await employeesResponse.json();
           if (active && Array.isArray(employeeData.employees)) setEmployees(employeeData.employees.map((item: {
-            id:string;name:string;role:string;shift:string;status:'Present'|'Absent'|'On Leave';salary:string|number;advance:string|number;
-          }) => ({id:item.id,name:item.name,role:item.role,shift:item.shift,status:item.status,salary:Number(item.salary),advance:Number(item.advance)})));
+            id:string;name:string;role:string;shift:string;status:'Present'|'Absent'|'On Leave'|'Not marked';salary:string|number;advance:string|number;active?:boolean;
+          }) => ({id:item.id,name:item.name,role:item.role,shift:item.shift,status:item.status,salary:Number(item.salary),advance:Number(item.advance),active:item.active!==false})));
         }
         if (payrollResponse.ok) {
           const payrollData = await payrollResponse.json();
           if (active && Array.isArray(payrollData.payroll)) setPayroll(payrollData.payroll.map((item: {
-            id:string;employeeId:string;employeeName:string;period:string;baseSalary:string|number;bonus:string|number;deduction:string|number;
+            id:string;employeeId:string;employeeName:string;period:string;baseSalary:string|number;bonus:string|number;deduction?:string|number;otherDeduction?:string|number;deductionNote?:string;
             advanceDeduction:string|number;netSalary:string|number;createdAt:string;
             payments:Array<{id:string;amount:string|number;paymentMethod:'Cash'|'Mada';date:string;createdAt:string}>;
           }) => ({
             id:item.id,employeeId:item.employeeId,employeeName:item.employeeName,period:item.period,
-            baseSalary:Number(item.baseSalary),bonus:Number(item.bonus),deduction:Number(item.deduction??0),advanceDeduction:Number(item.advanceDeduction),
+            baseSalary:Number(item.baseSalary),bonus:Number(item.bonus),deduction:Number(item.otherDeduction??item.deduction??0),otherDeduction:Number(item.otherDeduction??item.deduction??0),deductionNote:item.deductionNote||'',advanceDeduction:Number(item.advanceDeduction),
             netSalary:Number(item.netSalary),createdAt:item.createdAt,
             payments:item.payments.map(payment=>({id:payment.id,amount:Number(payment.amount),paymentMethod:payment.paymentMethod,date:payment.date,createdAt:payment.createdAt}))
           })));
@@ -1061,11 +1065,12 @@ function App() {
     if (!Number.isFinite(deduction) || deduction < 0 || deduction > employee.salary + bonus) { flash('Enter a valid deduction amount.'); return; }
     const advanceDeduction = Number(window.prompt(`Outstanding advance: ${currency(employee.advance)}. Deduct how much?`, String(Math.min(employee.advance, employee.salary + bonus - deduction))));
     if (!Number.isFinite(advanceDeduction) || advanceDeduction < 0 || advanceDeduction > employee.advance || deduction + advanceDeduction > employee.salary + bonus) { flash('Total deductions exceed the available salary.'); return; }
+    const deductionNote = deduction > 0 ? (window.prompt('Deduction reason (optional)', '') || '').trim() : '';
     const netSalary = employee.salary + bonus - deduction - advanceDeduction;
-    const record: PayrollRecord = { id: `payroll-${employee.id}-${period}`, employeeId: employee.id, employeeName: employee.name, period, baseSalary: employee.salary, bonus, deduction, advanceDeduction, netSalary, payments: [], createdAt: new Date().toISOString() };
+    const record: PayrollRecord = { id: `payroll-${employee.id}-${period}`, employeeId: employee.id, employeeName: employee.name, period, baseSalary: employee.salary, bonus, deduction, otherDeduction: deduction, deductionNote, advanceDeduction, netSalary, payments: [], createdAt: new Date().toISOString() };
     if (apiConnected && apiToken) {
       try {
-        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/payroll`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`}, body:JSON.stringify({employeeId:employee.id,period,bonus,deduction,advanceDeduction}) });
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/payroll`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`}, body:JSON.stringify({employeeId:employee.id,period,bonus,otherDeduction:deduction,deductionNote,advanceDeduction}) });
         const result = await response.json();
         if (!response.ok || !result.payroll) throw new Error(result.error || 'Payroll could not be created.');
         record.id = result.payroll.id; record.createdAt = result.payroll.createdAt;
