@@ -37,14 +37,14 @@ img { display: block; max-width: 100%; }
 .musafir-pos .text-white { color: #1d3029 !important; }
 .musafir-pos .text-slate-300, .musafir-pos .text-slate-400 { color: #68766e !important; }
 .musafir-pos .text-slate-500, .musafir-pos .text-slate-600 { color: #879188 !important; }
-.musafir-pos .bg-white\/\[.035\], .musafir-pos .bg-black\/20, .musafir-pos .bg-black\/10 { background: #f0ede4 !important; }
-.musafir-pos .bg-\[\\#191e24\] { background: #fff !important; }
-.musafir-pos .border-white\/\[.07\], .musafir-pos .border-white\/10 { border-color: #e2ddcf !important; }
+.musafir-pos .bg-white\/\[\.035\], .musafir-pos .bg-black\/20, .musafir-pos .bg-black\/10 { background: #f0ede4 !important; }
+.musafir-pos .bg-\[\#191e24\] { background: #fff !important; }
+.musafir-pos .border-white\/\[\.07\], .musafir-pos .border-white\/10 { border-color: #e2ddcf !important; }
 .musafir-pos .field { background: #fff; border-color: #d9d2c3; color: #1d3029; }
 .musafir-pos .field::placeholder { color: #89938c; }
 .musafir-pos .qty-btn { background: #e9efe8; color: #145044; }
 .musafir-pos .qty-btn:hover { background: #dcebdd; color: #0e3f32; }
-.musafir-pos .text-\[\\#e7b943\] { color: #946f19 !important; }
+.musafir-pos .text-\[\#e7b943\] { color: #946f19 !important; }
 .musafir-pos button:focus-visible { outline-color: #c99b2e; }
 @media (min-width: 1536px) { .musafir-pos { align-items: start; } }
 
@@ -73,8 +73,8 @@ img { display: block; max-width: 100%; }
   .musafir-pos > section > div:first-child { align-items: flex-start; }
   .musafir-pos > section > div:first-child > div:last-child { max-width: 100%; flex-wrap: wrap; }
   .musafir-pos > section .grid.grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .musafir-pos > section .grid.grid-cols-2.sm\\:grid-cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .musafir-pos > aside .max-h-\\[34vh\\] { max-height: 32vh; }
+  .musafir-pos > section .grid.grid-cols-2.sm\:grid-cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .musafir-pos > aside .max-h-\[34vh\] { max-height: 32vh; }
   .musafir-pos > aside:last-child { min-height: 280px; max-height: 55vh; }
   .musafir-pos button { touch-action: manipulation; }
 }
@@ -228,4 +228,120 @@ img { display: block; max-width: 100%; }
   .qr-order-confirmation > div > div:last-child { padding: 24px !important; }
   .qr-order-confirmation button { display: none !important; }
   .qr-order-confirmation p { break-inside: avoid; }
+}
+
+
+/* Premium fast-food workspace theme adapted from the supplied redesign.
+   Keep the existing POS data flow, modules, and theme controls intact. */
+.theme-shell.theme-light {
+  background: #f4f1e9 !important;
+  color: #26332c !important;
+}
+.theme-shell.theme-light aside {
+  background:
+    radial-gradient(ellipse at 8% 4%, rgba(195, 152, 94, .14), transparent 30%),
+    linear-gradient(160deg, #19382c 0%, #172f25 56%, #142b22 100%) !important;
+  border-color: rgba(255,255,255,.08) !important;
+  color: #f6f4ed !important;
+}
+.theme-shell.theme-light aside .text-white,
+.theme-shell.theme-light aside .text-slate-100,
+.theme-shell.theme-light aside .text-slate-200 { color: #f4f0e7 !important; }
+.theme-shell.theme-light aside .text-slate-400,
+.theme-shell.theme-light aside .text-slate-500,
+.theme-shell.theme-light aside .text-slate-600 { color: #9eafa2 !important; }
+.theme-shell.theme-light aside .nav-item { color: #b4c3b8 !important; }
+.theme-shell.theme-light aside .nav-item:hover {
+  color: #fff !important;
+  background: rgba(255,255,255,.07) !important;
+}
+.theme-shell.theme-light aside .nav-active {
+  color: #20352a !important;
+  background: #e4d4b2 !important;
+  box-shadow: 0 4px 16px rgba(8,20,14,.12) !important;
+  font-weight: 700;
+}
+.theme-shell.theme-light aside .nav-active svg { color: #2b4434 !important; }
+.theme-shell.theme-light header {
+  background: linear-gradient(105deg, #19382c 0%, #142b22 100%) !important;
+  border-color: rgba(255,255,255,.09) !important;
+  color: #f4f0e7 !important;
+}
+.theme-shell.theme-light header .text-white,
+.theme-shell.theme-light header .text-slate-100,
+.theme-shell.theme-light header .text-slate-200 { color: #f4f0e7 !important; }
+.theme-shell.theme-light header .text-slate-300,
+.theme-shell.theme-light header .text-slate-400,
+.theme-shell.theme-light header .text-slate-500 { color: #b4c3b8 !important; }
+.theme-shell.theme-light header button:hover { background: rgba(255,255,255,.09) !important; }
+.theme-shell.theme-light main {
+  background: #f4f1e9;
+  color: #26332c;
+}
+.theme-shell.theme-light main h1,
+.theme-shell.theme-light main h2,
+.theme-shell.theme-light main h3 { letter-spacing: -.025em; }
+.theme-shell.theme-light .musafir-surface {
+  background: #fff !important;
+  border-color: #e5e1d7 !important;
+  color: #26332c !important;
+  box-shadow: 0 8px 26px rgba(31,45,35,.045), 0 1px 2px rgba(31,45,35,.035);
+}
+.theme-shell.theme-light .musafir-pos > section,
+.theme-shell.theme-light .musafir-pos > aside {
+  border-radius: 18px;
+}
+.theme-shell.theme-light .musafir-pos > section {
+  box-shadow: 0 8px 26px rgba(31,45,35,.045);
+}
+.theme-shell.theme-light .musafir-pos > section .group:hover {
+  border-color: rgba(20,80,68,.35);
+  box-shadow: 0 10px 24px rgba(31,45,35,.09);
+}
+.theme-shell.theme-light .musafir-pos .field {
+  background: #fff !important;
+  border-color: #ded8ca !important;
+  color: #26332c !important;
+  border-radius: 10px;
+}
+.theme-shell.theme-light .musafir-pos .field:focus {
+  border-color: #b89b68 !important;
+  box-shadow: 0 0 0 3px rgba(184,155,104,.13);
+}
+.theme-shell.theme-light .musafir-pos .qty-btn {
+  background: #eaf0e9 !important;
+  color: #18362b !important;
+}
+.theme-shell.theme-light .musafir-pos .qty-btn:hover {
+  background: #dce8dc !important;
+  color: #102b25 !important;
+}
+.theme-shell.theme-light .musafir-pos button:focus-visible,
+.theme-shell.theme-light main button:focus-visible {
+  outline-color: #b89b68 !important;
+}
+.theme-shell.theme-light .musafir-pos .text-slate-400,
+.theme-shell.theme-light .musafir-pos .text-slate-500,
+.theme-shell.theme-light .musafir-pos .text-slate-600 { color: #78847b !important; }
+.theme-shell.theme-light .musafir-pos .text-white,
+.theme-shell.theme-light .musafir-pos .text-slate-100,
+.theme-shell.theme-light .musafir-pos .text-slate-200 { color: #26332c !important; }
+.theme-shell.theme-light .musafir-pos .bg-white\/\[\.035\],
+.theme-shell.theme-light .musafir-pos .bg-black\/10,
+.theme-shell.theme-light .musafir-pos .bg-black\/20 { background: #f3f2ec !important; }
+.theme-shell.theme-light .musafir-pos .border-white\/10,
+.theme-shell.theme-light .musafir-pos .border-white\/\[\.07\] { border-color: #e5e1d7 !important; }
+.theme-shell.theme-light .musafir-pos .text-\[\#e7b943\],
+.theme-shell.theme-light .musafir-pos .text-\[\#caa348\] { color: #9a7842 !important; }
+.theme-shell.theme-light .musafir-pos .bg-\[\#e7b943\] { background: #c4a36b !important; }
+.theme-shell.theme-light .musafir-pos .text-\[\#17130b\] { color: #1e2d24 !important; }
+@media (max-width: 767px) {
+  .theme-shell.theme-light .musafir-pos { gap: 12px; }
+  .theme-shell.theme-light .musafir-pos > section,
+  .theme-shell.theme-light .musafir-pos > aside { border-radius: 15px; }
+  .theme-shell.theme-light main { padding-bottom: 24px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .theme-shell.theme-light .musafir-pos button,
+  .theme-shell.theme-light aside .nav-item { transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
 }
