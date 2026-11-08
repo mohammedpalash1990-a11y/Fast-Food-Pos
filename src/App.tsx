@@ -1672,7 +1672,7 @@ function App() {
     if(!couponInput.trim()||subtotal<=0)return;
     setCouponBusy(true);
     try{
-      const response=await fetch(`${apiBase.replace(/\\/$/,'')}/api/coupons/validate`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({code:couponInput.trim(),subtotal})});
+      const response=await fetch(`${apiBase.replace(/\/$/,'')}/api/coupons/validate`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({code:couponInput.trim(),subtotal})});
       const result=await response.json();
       if(!response.ok||!result.coupon)throw new Error(result.error||'Coupon could not be validated.');
       setAppliedCoupon({code:result.coupon.code,discount:Number(result.discount),discountType:result.coupon.discountType,discountValue:Number(result.coupon.discountValue)});
@@ -1684,7 +1684,7 @@ function App() {
   const refreshCoupons = async () => {
     if(!apiConnected||!apiToken)return;
     try{
-      const response=await fetch(`${apiBase.replace(/\\/$/,'')}/api/coupons`,{headers:{Authorization:`Bearer ${apiToken}`}});
+      const response=await fetch(`${apiBase.replace(/\/$/,'')}/api/coupons`,{headers:{Authorization:`Bearer ${apiToken}`}});
       const result=await response.json();
       if(!response.ok||!Array.isArray(result.coupons))throw new Error(result.error||'Coupons could not be loaded.');
       setCoupons(result.coupons);
@@ -1704,13 +1704,13 @@ function App() {
     if(!Number.isFinite(minimumOrderAmount)||minimumOrderAmount<0){flash('Enter a valid minimum order amount.');return;}
     const expiry=window.prompt('Expiry date (YYYY-MM-DD), leave blank for no expiry','');
     if(expiry===null)return;
-    if(expiry.trim()&&!/^\\d{4}-\\d{2}-\\d{2}$/.test(expiry.trim())){flash('Enter expiry as YYYY-MM-DD.');return;}
+    if(expiry.trim()&&!/^\d{4}-\d{2}-\d{2}$/.test(expiry.trim())){flash('Enter expiry as YYYY-MM-DD.');return;}
     const usageInput=window.prompt('Maximum uses, leave blank for unlimited','');
     if(usageInput===null)return;
     const usageLimit=usageInput.trim()?Number(usageInput):null;
     if(usageLimit!==null&&(!Number.isInteger(usageLimit)||usageLimit<=0)){flash('Enter a positive whole-number usage limit.');return;}
     try{
-      const response=await fetch(`${apiBase.replace(/\\/$/,'')}/api/coupons`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({code:code.trim(),discountType,discountValue,minimumOrderAmount,expiresAt:expiry.trim()?new Date(expiry.trim()+'T23:59:59.999Z').toISOString():null,usageLimit})});
+      const response=await fetch(`${apiBase.replace(/\/$/,'')}/api/coupons`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({code:code.trim(),discountType,discountValue,minimumOrderAmount,expiresAt:expiry.trim()?new Date(expiry.trim()+'T23:59:59.999Z').toISOString():null,usageLimit})});
       const result=await response.json();
       if(!response.ok||!result.coupon)throw new Error(result.error||'Coupon could not be created.');
       await refreshCoupons();
@@ -1720,7 +1720,7 @@ function App() {
   const toggleCoupon = async (coupon:typeof coupons[number]) => {
     if(!apiConnected||!apiToken)return;
     try{
-      const response=await fetch(`${apiBase.replace(/\\/$/,'')}/api/coupons/${encodeURIComponent(coupon.id)}`,{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({active:!coupon.active})});
+      const response=await fetch(`${apiBase.replace(/\/$/,'')}/api/coupons/${encodeURIComponent(coupon.id)}`,{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({active:!coupon.active})});
       const result=await response.json();
       if(!response.ok||!result.coupon)throw new Error(result.error||'Coupon status could not be updated.');
       setCoupons(current=>current.map(item=>item.id===coupon.id?{...item,active:result.coupon.active}:item));
