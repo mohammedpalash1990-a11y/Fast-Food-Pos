@@ -1,1 +1,24 @@
--- Branch-scoped coupons. Usage is incremented in the same transaction as order creation.\nCREATE TABLE IF NOT EXISTS discount_coupons (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  organization_id uuid NOT NULL REFERENCES organizations ON DELETE CASCADE,\n  branch_id uuid NOT NULL REFERENCES branches ON DELETE CASCADE,\n  code text NOT NULL CHECK (code = upper(code) AND length(code) BETWEEN 3 AND 32),\n  discount_type text NOT NULL CHECK (discount_type IN ('percentage','fixed')),\n  discount_value numeric(12,2) NOT NULL CHECK (discount_value > 0),\n  min_subtotal numeric(12,2) NOT NULL DEFAULT 0 CHECK (min_subtotal >= 0),\n  max_discount numeric(12,2) CHECK (max_discount IS NULL OR max_discount > 0),\n  usage_limit integer CHECK (usage_limit IS NULL OR usage_limit > 0),\n  used_count integer NOT NULL DEFAULT 0 CHECK (used_count >= 0),\n  starts_at timestamptz,\n  expires_at timestamptz,\n  active boolean NOT NULL DEFAULT true,\n  created_by uuid REFERENCES users ON DELETE SET NULL,\n  created_at timestamptz NOT NULL DEFAULT now(),\n  UNIQUE(branch_id,code),\n  CHECK (discount_type <> 'percentage' OR discount_value <= 100),\n  CHECK (expires_at IS NULL OR starts_at IS NULL OR expires_at > starts_at)\n);\nALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_id uuid REFERENCES discount_coupons ON DELETE SET NULL;\nALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code text;\nCREATE INDEX IF NOT EXISTS discount_coupons_branch_active_idx ON discount_coupons(branch_id,active,code);\n
+-- Branch-scoped coupons. Usage is incremented in the same transaction as order creation.
+CREATE TABLE IF NOT EXISTS discount_coupons (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id uuid NOT NULL REFERENCES organizations ON DELETE CASCADE,
+  branch_id uuid NOT NULL REFERENCES branches ON DELETE CASCADE,
+  code text NOT NULL CHECK (code = upper(code) AND length(code) BETWEEN 3 AND 32),
+  discount_type text NOT NULL CHECK (discount_type IN ('percentage','fixed')),
+  discount_value numeric(12,2) NOT NULL CHECK (discount_value > 0),
+  min_subtotal numeric(12,2) NOT NULL DEFAULT 0 CHECK (min_subtotal >= 0),
+  max_discount numeric(12,2) CHECK (max_discount IS NULL OR max_discount > 0),
+  usage_limit integer CHECK (usage_limit IS NULL OR usage_limit > 0),
+  used_count integer NOT NULL DEFAULT 0 CHECK (used_count >= 0),
+  starts_at timestamptz,
+  expires_at timestamptz,
+  active boolean NOT NULL DEFAULT true,
+  created_by uuid REFERENCES users ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(branch_id,code),
+  CHECK (discount_type <> 'percentage' OR discount_value <= 100),
+  CHECK (expires_at IS NULL OR starts_at IS NULL OR expires_at > starts_at)
+);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_id uuid REFERENCES discount_coupons ON DELETE SET NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code text;
+CREATE INDEX IF NOT EXISTS discount_coupons_branch_active_idx ON discount_coupons(branch_id,active,code);
