@@ -292,7 +292,11 @@ app.get('/api/menu/qr',publicMenuLimiter,asyncRoute(async(req,res)=>{
   if(!parsed.success)return res.status(400).json({error:'A valid branchId is required'});
   const branch=await pool.query('SELECT id,code FROM branches WHERE id=$1',[parsed.data.branchId]);
   if(!branch.rowCount)return res.status(404).json({error:'Branch not found'});
-  const base=(process.env.PUBLIC_MENU_BASE_URL||`${req.protocol}://${req.get('host')}/menu`).replace(/\/$/,'');
+  const configuredBase=String(req.query.baseUrl||process.env.PUBLIC_MENU_BASE_URL||`${req.protocol}://${req.get('host')}/menu`).trim();
+  let parsedBase:URL;
+  try{parsedBase=new URL(configuredBase);}catch{return res.status(400).json({error:'A valid public menu base URL is required'});}
+  if(!['http:','https:'].includes(parsedBase.protocol)||parsedBase.username||parsedBase.password||parsedBase.search||parsedBase.hash)return res.status(400).json({error:'Invalid public menu base URL'});
+  const base=parsedBase.toString().replace(/\/$/,'');
   const params=new URLSearchParams({branch:branch.rows[0].id});
   const table=String(req.query.table||'').trim().slice(0,24);
   if(table)params.set('table',table);
