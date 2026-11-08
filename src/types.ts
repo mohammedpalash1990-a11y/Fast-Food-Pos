@@ -1,6 +1,6 @@
 export type CategoryName = 'Burgers' | 'Pizza' | 'Sandwiches' | 'Fried Chicken' | 'French Fries' | 'Chicken Nuggets' | 'Pasta' | 'Snacks' | 'Drinks' | 'Desserts' | 'Combo Meals';
 export type OrderType = 'Dine-in' | 'Takeaway' | 'Pickup' | 'Home Delivery';
-export type OrderStatus = 'Pending' | 'Accepted' | 'Preparing' | 'Ready' | 'Completed';
+export type OrderStatus = 'Pending' | 'Accepted' | 'Preparing' | 'Ready' | 'Completed' | 'Cancelled';
 export type PaymentMethod = 'Cash' | 'Mada';
 export interface OrderPayment { method: PaymentMethod; amount: number; }
 
