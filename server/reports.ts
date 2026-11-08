@@ -114,10 +114,17 @@ export function registerReportRoutes(app: Express, deps: ReportDeps): void {
           GROUP BY o.order_type`,
         params
       ),
+      // Tender mix must reconcile with revenue, so payments are joined back to
+      // their order: a payment attached to a cancelled order is a refund/void
+      // case and never counts as money collected in the period. Payment-side
+      // organization/branch scoping and the direction/date filters are kept.
       pool.query(
         `SELECT p.method, COALESCE(SUM(p.amount), 0) AS amount
            FROM payments p
-          WHERE p.organization_id = $1 AND p.branch_id = $2
+           JOIN orders o ON o.id = p.order_id
+          WHERE o.organization_id = $1 AND o.branch_id = $2
+            AND o.status <> 'Cancelled'
+            AND p.organization_id = $1 AND p.branch_id = $2
             AND p.direction = 'in' AND p.order_id IS NOT NULL
             AND ${timestampWindow('p')}
           GROUP BY p.method`,

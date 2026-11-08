@@ -102,8 +102,9 @@ before(async () => {
     `INSERT INTO payments(organization_id,branch_id,order_id,amount,method,direction,note,created_by,created_at) VALUES
      ($1,$2,$3,23,'Cash','in','Order payment',$5, now()),
      ($1,$2,$4,11.5,'Mada','in','Order payment',$5, now()),
-     ($1,$2,$6,10,'Cash','in','Order payment',$5, now() - interval '3 days')`,
-    [org, branch, dineIn, takeaway, ownerId, older]
+     ($1,$2,$6,10,'Cash','in','Order payment',$5, now() - interval '3 days'),
+     ($1,$2,$7,50,'Cash','in','Payment later cancelled',$5, now())`,
+    [org, branch, dineIn, takeaway, ownerId, older, cancelled]
   );
   await db.query(
     `INSERT INTO stock_movements(branch_id,ingredient_id,movement_type,quantity_delta,reference_id,note,created_by) VALUES
@@ -177,6 +178,34 @@ test('sales report totals, tender mix and best sellers come from the database', 
 
   const byType = Object.fromEntries(response.body.byOrderType.map((row: any) => [row.orderType, row.revenue]));
   assert.deepEqual(byType, { 'Dine-in': 23, Takeaway: 11.5 });
+});
+
+test('tender totals exclude payments attached to cancelled orders', async () => {
+  // Fixture check: the cancelled order really does carry a recorded payment, so the
+  // assertions below are meaningful and cannot pass on an empty dataset.
+  const recorded = await db.query(
+    `SELECT COALESCE(SUM(p.amount), 0) AS amount, COUNT(*)::int AS payments
+       FROM payments p
+       JOIN orders o ON o.id = p.order_id
+      WHERE p.organization_id = $1 AND p.branch_id = $2 AND o.status = 'Cancelled' AND p.direction = 'in'`,
+    [ids.org, ids.branch]
+  );
+  assert.equal(recorded.rows[0].payments, 1);
+  assert.equal(Number(recorded.rows[0].amount), 50);
+
+  // Today: Cash 23 (dine-in) + Mada 11.5 (takeaway); the cancelled order's 50 Cash must not appear.
+  const today = await call('/api/reports/sales?range=Today', tokens.owner);
+  assert.equal(today.status, 200);
+  assert.deepEqual(today.body.tenders, { Cash: 23, Mada: 11.5, total: 34.5 });
+  assert.equal(today.body.excluded.cancelledOrders, 1);
+
+  // Last 7 days: adds the 3-day-old 10 Cash payment, still without the cancelled 50.
+  const week = await call('/api/reports/sales?range=Last%207%20days', tokens.owner);
+  assert.deepEqual(week.body.tenders, { Cash: 33, Mada: 11.5, total: 44.5 });
+
+  // Tender totals must reconcile to recorded revenue, never exceed it.
+  assert.equal(today.body.tenders.total, today.body.totals.revenue);
+  assert.equal(week.body.tenders.total, week.body.totals.revenue);
 });
 
 test('date ranges select the right business days', async () => {
