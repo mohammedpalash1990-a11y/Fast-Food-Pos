@@ -267,7 +267,7 @@ app.post('/api/qr/orders',publicQrOrderLimiter,asyncRoute(async(req,res)=>{
     let customerId:string;
     if(customer.rowCount){
       customerId=String(customer.rows[0].id);
-      await client.query('UPDATE customers SET name=$1,address=$2 WHERE id=$3 AND organization_id=$4',[d.customerName,d.address,customerId,organizationId]);
+      await client.query('UPDATE customers SET name=$1,address=CASE WHEN $2<>'' THEN $2 ELSE address END WHERE id=$3 AND organization_id=$4',[d.customerName,d.address,customerId,organizationId]);
     }else{
       const inserted=await client.query('INSERT INTO customers(organization_id,name,phone,address) VALUES($1,$2,$3,$4) RETURNING id',[organizationId,d.customerName,d.phone,d.address]);
       customerId=String(inserted.rows[0].id);
