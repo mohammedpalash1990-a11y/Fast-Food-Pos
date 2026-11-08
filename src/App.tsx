@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from 'react';
 import { Activity, ArrowDownRight, ArrowUpRight, BarChart3, Bell, Bike, BookOpen, Boxes, BriefcaseBusiness, CalendarDays, ChefHat, ChevronDown, CircleDollarSign, ClipboardList, Grid2X2, LayoutDashboard, LogOut, Menu, Moon, Package, Plus, Printer, Search, Settings, ShoppingBag, ShoppingCart, Sparkles, Sun, Table2, Users, Wallet, X } from 'lucide-react';
 import { categories, demoAuditLogs, demoCustomers, demoEmployees, demoInventory, demoOrders, demoProducts, demoSuppliers } from './data/demoData';
 import { type CartItem, type Customer, type Employee, type InventoryItem, type Order, type OrderStatus, type PaymentMethod, type Product, type Supplier } from './types';
@@ -30,7 +30,7 @@ const themePresets: Record<ThemePresetName, { accent: string; background: string
   'Modern Ivory': { accent:'#B89B68', background:'#F4F1E9', surface:'#FFFFFF', sidebar:'#26332C', text:'#26332C', muted:'#68766E', border:'#DED8CA' }
 };
 const defaultThemeConfig: ThemeConfig = { preset:'Arabian Royal', appearance:'Both', customColors:{ accent:'#C6A66B', background:'#102B25', surface:'#1D3A31', sidebar:'#0B211B' } };
-const getThemeStyle = (config: ThemeConfig, light: boolean): React.CSSProperties => {
+const getThemeStyle = (config: ThemeConfig, light: boolean): CSSProperties => {
   const preset = themePresets[config.preset] || themePresets['Arabian Royal'];
   return {
     '--theme-accent': config.customColors.accent || preset.accent,
@@ -42,7 +42,7 @@ const getThemeStyle = (config: ThemeConfig, light: boolean): React.CSSProperties
     '--theme-muted': light ? '#68766E' : preset.muted,
     '--theme-border': light ? '#DED8CA' : preset.border,
     '--theme-accent-contrast': '#17130B'
-  } as React.CSSProperties;
+  } as CSSProperties;
 };
 
 
