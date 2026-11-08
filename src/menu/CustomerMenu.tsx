@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CheckCircle2, Minus, Plus, ShoppingBag } from 'lucide-react';
+import { CheckCircle2, Minus, Plus, ShoppingBag } from 'lucide-react';
 
 type MenuProduct = { id:string; name:string; price:string|number; image_url?:string|null; description?:string|null; category?:string|null };
 type MenuData = { branch:{id:string;name:string;organizationName:string}; products:MenuProduct[]; categories:string[] };
@@ -92,7 +92,7 @@ export default function CustomerMenu(){
         </>}
       </section>
       <aside className="h-fit rounded-2xl border border-[#e4dece] bg-white p-4 shadow-sm lg:sticky lg:top-28">
-        {success?<div className="py-6 text-center"><CheckCircle2 size={42} className="mx-auto text-[#176044]"/><h2 className="mt-4 text-xl font-bold">Order received</h2><p className="mt-2 text-sm text-[#78837d]">Order #{success.number}</p><p className="mt-3 text-lg font-bold text-[#145044]">{money(success.total)}</p><p className="mt-3 text-xs leading-5 text-[#78837d]">Your order is awaiting restaurant confirmation. Pay at the restaurant by Cash or Mada when your order is served or collected.</p><button onClick={()=>{setSuccess(null);setCustomerName('');setPhone('');setAddress('');setNotes('');}} className="mt-5 rounded-xl bg-[#145044] px-4 py-2.5 text-xs font-semibold text-white">Back to menu</button></div>:<>
+        {success?<div className="py-6 text-center"><CheckCircle2 size={42} className="mx-auto text-[#176044]"/><h2 className="mt-4 text-xl font-bold">Order received</h2><p className="mt-2 text-sm text-[#78837d]">Order #{success.number}</p><p className="mt-3 text-lg font-bold text-[#145044]">{money(success.total)}</p><p className="mt-3 text-xs leading-5 text-[#78837d]">Your order is awaiting restaurant confirmation. {orderType==='Home Delivery'?'Pay Cash or Mada when your order is delivered.':'Pay Cash or Mada at the restaurant when your order is served or collected.'}</p><button onClick={()=>{setSuccess(null);setCustomerName('');setPhone('');setAddress('');setNotes('');}} className="mt-5 rounded-xl bg-[#145044] px-4 py-2.5 text-xs font-semibold text-white">Back to menu</button></div>:<>
           <div className="flex items-center justify-between"><h2 className="text-lg font-bold">Your order</h2><span className="text-xs text-[#78837d]">{itemCount} items</span></div>
           <div className="mt-3 max-h-64 space-y-3 overflow-y-auto">{cartItems.map(item=><div key={item.product.id} className="flex items-center gap-2"><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{item.product.name}</p><p className="text-[10px] text-[#78837d]">{money(Number(item.product.price))} each</p></div><button onClick={()=>setCart(current=>({...current,[item.product.id]:Math.max(0,(current[item.product.id]||0)-1)}))} className="grid h-7 w-7 place-items-center rounded-md border border-[#e4dece]"><Minus size={12}/></button><span className="w-4 text-center text-xs">{item.quantity}</span><button onClick={()=>setCart(current=>({...current,[item.product.id]:(current[item.product.id]||0)+1}))} className="grid h-7 w-7 place-items-center rounded-md border border-[#e4dece]"><Plus size={12}/></button></div>)}</div>
           <div className="mt-4 space-y-2 border-t border-[#eee8da] pt-3 text-xs"><div className="flex justify-between"><span className="text-[#78837d]">Subtotal</span><span>{money(subtotal)}</span></div><div className="flex justify-between"><span className="text-[#78837d]">VAT (15%)</span><span>{money(tax)}</span></div><div className="flex justify-between text-sm font-bold"><span>Total</span><span className="text-[#145044]">{money(total)}</span></div></div>
@@ -105,7 +105,7 @@ export default function CustomerMenu(){
           </div>
           {error&&<p role="alert" className="mt-3 rounded-lg bg-rose-50 p-2 text-xs text-rose-700">{error}</p>}
           <button onClick={()=>void submitOrder()} disabled={!cartItems.length||submitting||loading} className="mt-4 w-full rounded-xl bg-[#145044] py-3 text-sm font-bold text-white disabled:opacity-40">{submitting?'Submitting…':'Place order · '+money(total)}</button>
-          <p className="mt-2 text-center text-[10px] leading-4 text-[#78837d]">No online payment is taken. The restaurant confirms your order and collects Cash or Mada at the counter.</p>
+          <p className="mt-2 text-center text-[10px] leading-4 text-[#78837d]">No online payment is taken. The restaurant confirms your order and collects Cash or Mada {orderType==='Home Delivery'?'on delivery.':'at the counter.'}</p>
         </>}
       </aside>
     </div>
