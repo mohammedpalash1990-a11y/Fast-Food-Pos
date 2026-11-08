@@ -375,7 +375,7 @@ app.get('/api/orders',authenticate,allow('owner','manager','cashier','kitchen','
   const limit=Math.min(Math.max(Number(req.query.limit)||100,1),250);
   const rows=await pool.query(`SELECT o.id,o.order_number,o.order_type,o.status,o.channel,o.subtotal,o.tax,o.discount,o.total,o.notes,o.created_at,
     t.table_number,
-    COALESCE(c.name,'Walk-in Guest') AS customer_name,
+    COALESCE(c.name,'Walk-in Guest') AS customer_name,c.phone AS customer_phone,c.address AS customer_address,
     GREATEST(0,COALESCE((SELECT SUM(CASE WHEN p.direction='in' THEN p.amount ELSE -p.amount END) FROM payments p WHERE p.order_id=o.id),0)) AS paid,
     COALESCE((SELECT p.method FROM payments p WHERE p.order_id=o.id AND p.direction='in' ORDER BY p.created_at DESC LIMIT 1),'Cash') AS payment_method,
     COALESCE((SELECT json_agg(json_build_object('method',p.method,'amount',p.amount) ORDER BY p.method,p.created_at,p.id) FROM payments p WHERE p.order_id=o.id AND p.direction='in'),'[]'::json) AS payment_breakdown,
