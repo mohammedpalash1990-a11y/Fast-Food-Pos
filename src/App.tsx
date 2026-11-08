@@ -720,7 +720,7 @@ function App() {
     if (amount <= 0) { flash('This order is already paid.'); return; }
     if (!apiToken || !apiConnected) { flash('Connect the POS database before collecting QR order payments.'); return; }
     try {
-      const base = apiBase.replace(/\\/$/, '');
+      const base = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
       const response = await fetch(base + '/api/orders/' + encodeURIComponent(order.id) + '/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiToken },
