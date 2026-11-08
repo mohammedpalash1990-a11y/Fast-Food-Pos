@@ -225,7 +225,7 @@ function App() {
           id: string; order_number: number | string; order_type: Order['type']; status: string;
           created_at: string; customer_name: string; table_number?: string | null; subtotal: string | number; tax: string | number;
           discount: string | number; total: string | number; paid: string | number;
-          payment_method: string; notes?: string;
+          payment_method: string; payment_breakdown?: Array<{method:PaymentMethod;amount:string|number}>; notes?: string;
           items: Array<{ id: string; productId: string | null; name: string; qty: number; unitPrice: string | number }>;
         }) => ({
           id: saved.id,
@@ -241,6 +241,7 @@ function App() {
           total: Number(saved.total),
           paid: Number(saved.paid),
           paymentMethod: saved.payment_method === 'Mada' ? 'Mada' : 'Cash',
+          paymentBreakdown: (saved.payment_breakdown || []).map(payment => ({method:payment.method === 'Mada' ? 'Mada' : 'Cash',amount:Number(payment.amount)})),
           kitchenNote: saved.notes || undefined,
           items: saved.items.map(item => ({
             id: item.id,
