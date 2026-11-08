@@ -62,6 +62,8 @@ function App() {
   const [splitPayment, setSplitPayment] = useState(false);
   const [cashPaymentAmount, setCashPaymentAmount] = useState('10');
   const [kitchenAcceptanceRequired, setKitchenAcceptanceRequired] = useState<boolean>(() => safeRead('musafir-kitchen-acceptance-required', false));
+  const [branchName, setBranchName] = useState(() => safeRead('musafir-branch-name', 'Musafir Fast Food'));
+  const [receiptFooter, setReceiptFooter] = useState(() => safeRead('musafir-receipt-footer', 'Thank you for visiting Musafir!'));
   const [discount, setDiscount] = useState('0');
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<{code:string;discount:number;discountType:string;discountValue:number}|null>(null);
@@ -121,6 +123,32 @@ function App() {
       .catch(error => { if (active) flash(error instanceof Error ? error.message : 'Attendance could not be loaded.'); });
     return () => { active = false; };
   }, [apiConnected, apiToken, apiBase, view, attendanceDate, canManageHr]);
+  useEffect(() => {
+    if(!apiConnected||!apiToken||!apiBase)return;
+    let active=true;
+    fetch(apiBase.replace(/\/$/,'')+'/api/settings',{headers:{Authorization:'Bearer '+apiToken}})
+      .then(async response=>{const result=await response.json();if(!response.ok||!result.settings)throw new Error(result.error||'Branch settings could not be loaded.');return result.settings;})
+      .then(settings=>{if(active){setBranchName(settings.branchName||'Musafir Fast Food');setReceiptFooter(settings.receiptFooter||'Thank you for visiting Musafir!');setKitchenAcceptanceRequired(Boolean(settings.kitchenAcceptanceRequired));}})
+      .catch(error=>{if(active)flash(error instanceof Error?error.message:'Branch settings could not be loaded.');});
+    return ()=>{active=false;};
+  },[apiConnected,apiToken,apiBase]);
+  const saveBranchConfiguration = async () => {
+    const name=branchName.trim(),footer=receiptFooter.trim();
+    if(name.length<2||name.length>100||footer.length>200){flash('Branch name must be 2–100 characters and receipt footer 0–200 characters.');return;}
+    if(apiConnected&&apiToken){
+      try{
+        const response=await fetch(apiBase.replace(/\/$/,'')+'/api/settings',{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:'Bearer '+apiToken},body:JSON.stringify({branchName:name,receiptFooter:footer})});
+        const result=await response.json();
+        if(!response.ok||!result.settings)throw new Error(result.error||'Branch configuration could not be saved.');
+        setBranchName(result.settings.branchName);
+        setReceiptFooter(result.settings.receiptFooter);
+      }catch(error){flash(error instanceof Error?error.message:'Branch configuration could not be saved.');return;}
+    }else{
+      setBranchName(name);setReceiptFooter(footer);
+    }
+    flash('Branch settings saved.');
+  };
+
   useEffect(() => { save('musafir-audit', logs); }, [logs]);
   useEffect(() => { if (!apiConnected) save('musafir-reservations', reservations); }, [reservations, apiConnected]);
   useEffect(() => { if (!apiConnected) save('musafir-restaurant-tables', restaurantTables); }, [restaurantTables, apiConnected]);
@@ -358,6 +386,8 @@ function App() {
     return ()=>{active=false;};
   },[appliedCouponCode,subtotal,apiConnected,apiToken,apiBase]);
   useEffect(() => { save('musafir-kitchen-acceptance-required', kitchenAcceptanceRequired); }, [kitchenAcceptanceRequired]);
+  useEffect(() => { if (!apiConnected) save('musafir-branch-name', branchName); }, [branchName, apiConnected]);
+  useEffect(() => { if (!apiConnected) save('musafir-receipt-footer', receiptFooter); }, [receiptFooter, apiConnected]);
   const filteredProducts = useMemo(() => products.filter(p => (category === 'All' || p.category === category) && p.name.toLowerCase().includes(search.toLowerCase())), [products, category, search]);
   const lowStock = inventory.filter(item => item.trackStock && item.stock <= item.reorderLevel);
   const todayOrders = orders.filter(order => new Date(order.createdAt).toDateString() === new Date().toDateString() && order.number !== 'HOLD');
@@ -614,7 +644,15 @@ function App() {
     setKitchenAcceptanceRequired(enabled);
     flash(enabled ? 'Kitchen acceptance is required for new orders.' : 'Orders can complete directly from checkout.');
   };
-  const apiSettings = (): ReactNode => <div className="space-y-4"><section className={`${panel} max-w-2xl p-5 md:p-7`}>
+  const apiSettings = (): ReactNode => <div className="space-y-4">
+  <section className="rounded-2xl border border-white/[.07] bg-[#171c21] max-w-2xl p-5 md:p-7">
+    <div className="mb-4"><p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#caa348]">Branch configuration</p><h2 className="mt-1 text-lg font-semibold text-white">Restaurant identity & receipt</h2><p className="mt-1 text-xs text-slate-400">Save branch details to the live database and keep Saudi checkout defaults consistent.</p></div>
+    <label className="mb-1 block text-xs text-slate-400">Branch display name</label><input value={branchName} onChange={event=>setBranchName(event.target.value)} maxLength={100} className="field mb-3 w-full"/>
+    <label className="mb-1 block text-xs text-slate-400">Receipt footer</label><textarea value={receiptFooter} onChange={event=>setReceiptFooter(event.target.value)} maxLength={200} rows={2} className="field mb-3 w-full resize-none"/>
+    <div className="mb-4 grid grid-cols-3 gap-2 rounded-xl border border-white/10 bg-white/[.025] p-3 text-center"><div><div className="text-[10px] text-slate-500">Currency</div><div className="mt-1 text-sm font-semibold text-white">SAR</div></div><div><div className="text-[10px] text-slate-500">VAT</div><div className="mt-1 text-sm font-semibold text-white">15%</div></div><div><div className="text-[10px] text-slate-500">Payments</div><div className="mt-1 text-xs font-semibold text-white">Cash · Mada</div></div></div>
+    <button onClick={()=>void saveBranchConfiguration()} disabled={apiConnected&&!['owner','manager'].includes(apiRole)} className="rounded-xl bg-[#e7b943] px-4 py-2.5 text-sm font-semibold text-[#17130b] disabled:opacity-40">Save branch settings</button>
+    <p className="mt-3 text-[11px] text-slate-500">{apiConnected?'Branch identity and receipt footer are stored in PostgreSQL.':'Saved on this device until the backend is connected.'}</p>
+  </section><section className={`${panel} max-w-2xl p-5 md:p-7`}>
     <div className="mb-4">{heading('Order workflow','Kitchen acceptance','Choose whether new orders must pass through the Kitchen Accept workflow.')}</div>
     <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-white/[.025] p-4">
       <input type="checkbox" checked={kitchenAcceptanceRequired} onChange={event=>{void updateKitchenAcceptance(event.target.checked);}} className="mt-1 h-4 w-4 accent-[#e7b943]"/>
