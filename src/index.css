@@ -174,3 +174,46 @@ img { display: block; max-width: 100%; }
 @media (prefers-reduced-motion: reduce) {
   .theme-shell *, .theme-shell *::before, .theme-shell *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+
+/* Apply the selected palette to every POS workspace surface, not only Theme Studio. */
+.theme-shell main [class*="bg-[#191e24]"],
+.theme-shell main [class*="bg-[#171d22]"],
+.theme-shell main [class*="bg-[#171c21]"],
+.theme-shell main [class*="bg-[#14191f]"],
+.theme-shell main [class*="bg-[#20262c]"],
+.theme-shell main [class*="bg-[#22272c]"],
+.theme-shell main [class*="bg-[#fbf9f2]"] {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text);
+}
+.theme-shell main section[class*="bg-[radial-gradient"] {
+  background: linear-gradient(125deg, var(--theme-surface), var(--theme-bg)) !important;
+  border-color: color-mix(in srgb, var(--theme-accent) 28%, var(--theme-border)) !important;
+}
+.theme-shell main [class*="border-[#d6a943]"],
+.theme-shell main [class*="border-[#d9d2c3]"],
+.theme-shell main [class*="border-[#ded8ca]"] {
+  border-color: var(--theme-border) !important;
+}
+.theme-shell main [class*="text-[#f3d890]"],
+.theme-shell main [class*="text-[#946f19]"],
+.theme-shell main [class*="text-[#c99b2e]"] {
+  color: var(--theme-accent) !important;
+}
+.theme-shell main input:not([type="color"]),
+.theme-shell main select,
+.theme-shell main textarea {
+  accent-color: var(--theme-accent);
+}
+.theme-shell.theme-light main [class*="bg-[#191e24]"],
+.theme-shell.theme-light main [class*="bg-[#171d22]"],
+.theme-shell.theme-light main [class*="bg-[#171c21]"],
+.theme-shell.theme-light main [class*="bg-[#14191f]"],
+.theme-shell.theme-light main [class*="bg-[#20262c]"],
+.theme-shell.theme-light main [class*="bg-[#22272c]"],
+.theme-shell.theme-light main [class*="bg-[#fbf9f2]"] {
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
