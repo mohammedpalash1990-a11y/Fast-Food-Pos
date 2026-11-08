@@ -67,6 +67,8 @@ function App() {
   const [appliedCoupon, setAppliedCoupon] = useState<{code:string;discount:number;discountType:string;discountValue:number}|null>(null);
   const [coupons, setCoupons] = useState<Array<{id:string;code:string;discountType:'percent'|'fixed';discountValue:number|string;minimumOrderAmount:number|string;maximumDiscount:number|string|null;expiresAt:string|null;usageLimit:number|null;usageCount:number;active:boolean}>>([]);
   const [couponBusy, setCouponBusy] = useState(false);
+  const [managedUsers, setManagedUsers] = useState<Array<{id:string;email:string;displayName:string;role:string;active:boolean;createdAt:string}>>([]);
+  const [roleCatalog, setRoleCatalog] = useState<Array<{role:string;label:string;permissions:string[]}>>([]);
   const [note, setNote] = useState('');
   const [toast, setToast] = useState('');
   const [mobileNav, setMobileNav] = useState(false);
@@ -1746,11 +1748,93 @@ function App() {
     {apiConnected&&!coupons.length&&<p className="py-10 text-center text-sm text-slate-500">No coupons created for this branch.</p>}
   </section>;
 
-  const moduleMessages: Record<string,string> = { tables:'Manage table labels, seating capacity and branch-scoped occupancy status.', reservations:'Schedule guests, record party size and contact details, and track booked, seated, completed or cancelled reservations.', menu:'Create, edit, deactivate and reactivate products. Inactive products remain available for restoration.', categories:'Create, rename and delete categories. Categories with active products cannot be deleted.', recipes:'Manage recipes, estimate per-item ingredient cost and margin from current inventory unit costs, and check tracked stock capacity.', purchases:'Record goods received, add quantities to inventory and track supplier credit locally.', delivery:'Assign Home Delivery orders to branch delivery staff and track pickup and delivery status.', expenses:'Record shop operating expenses, payment method and expense date; review daily and monthly totals.', employees:'Manage employee profiles, monthly salaries and shift details in local POS storage.', attendance:'Update daily employee attendance status in local POS storage.', payroll:'Create monthly payroll, track salary advances, and record full or partial Cash/Mada salary payments.', reports:'Local totals are instant; a connected branch also shows server-verified sales, date filtering and CSV export.', profit:'Local totals stay available offline; a connected branch adds server-verified net sales, recipe-valued COGS and operating result.',  discounts:'Manage branch-scoped promo codes, discount rules, expiry dates and redemption limits.', roles:'Authentication and enforceable role permissions need a secure backend.', settings:'Restaurant and branch settings need completion.' };
+
+  const refreshUsers = async () => {
+    if(!apiConnected||!apiToken||!['owner','manager'].includes(apiRole))return;
+    try{
+      const [usersResponse,rolesResponse]=await Promise.all([
+        fetch(`${apiBase.replace(/\/$/,'')}/api/users`,{headers:{Authorization:`Bearer ${apiToken}`}}),
+        fetch(`${apiBase.replace(/\/$/,'')}/api/roles/permissions`,{headers:{Authorization:`Bearer ${apiToken}`}})
+      ]);
+      const [usersData,rolesData]=await Promise.all([usersResponse.json(),rolesResponse.json()]);
+      if(!usersResponse.ok||!Array.isArray(usersData.users))throw new Error(usersData.error||'Staff accounts could not be loaded.');
+      if(!rolesResponse.ok||!Array.isArray(rolesData.roles))throw new Error(rolesData.error||'Role permissions could not be loaded.');
+      setManagedUsers(usersData.users);
+      setRoleCatalog(rolesData.roles);
+    }catch(error){flash(error instanceof Error?error.message:'User administration could not be loaded.');}
+  };
+  const createManagedUser = async () => {
+    if(!apiConnected||!apiToken||!['owner','manager'].includes(apiRole)){flash('Owner or manager access is required.');return;}
+    const displayName=window.prompt('Staff display name');
+    if(!displayName?.trim())return;
+    const email=window.prompt('Staff email address');
+    if(!email?.trim())return;
+    const password=window.prompt('Temporary password (minimum 12 characters)');
+    if(!password)return;
+    if(password.length<12){flash('Use a password with at least 12 characters.');return;}
+    const available=apiRole==='owner'?['owner','manager','cashier','kitchen','inventory','accountant','delivery']:['cashier','kitchen','inventory','accountant','delivery'];
+    const roleInput=window.prompt('Role: '+available.join(', '),'cashier');
+    if(!roleInput)return;
+    const role=roleInput.trim().toLowerCase();
+    if(!available.includes(role)){flash('Choose a role allowed for your account.');return;}
+    try{
+      const response=await fetch(`${apiBase.replace(/\/$/,'')}/api/users`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({displayName:displayName.trim(),email:email.trim(),password,role})});
+      const result=await response.json();
+      if(!response.ok||!result.user)throw new Error(result.error||'Staff account could not be created.');
+      await refreshUsers();
+      flash(`Staff account created for ${result.user.displayName}.`);
+    }catch(error){flash(error instanceof Error?error.message:'Staff account creation failed.');}
+  };
+  const changeManagedUserRole = async (user:typeof managedUsers[number]) => {
+    const available=apiRole==='owner'?['owner','manager','cashier','kitchen','inventory','accountant','delivery']:['cashier','kitchen','inventory','accountant','delivery'];
+    const roleInput=window.prompt('Assign role: '+available.join(', '),user.role);
+    if(!roleInput)return;
+    const role=roleInput.trim().toLowerCase();
+    if(!available.includes(role)){flash('Choose a role allowed for your account.');return;}
+    try{
+      const response=await fetch(`${apiBase.replace(/\/$/,'')}/api/users/${encodeURIComponent(user.id)}`,{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({role})});
+      const result=await response.json();
+      if(!response.ok||!result.user)throw new Error(result.error||'Role could not be updated.');
+      setManagedUsers(current=>current.map(item=>item.id===user.id?{...item,...result.user}:item));
+      flash(`${user.displayName} role updated to ${role}.`);
+    }catch(error){flash(error instanceof Error?error.message:'Role update failed.');}
+  };
+  const toggleManagedUser = async (user:typeof managedUsers[number]) => {
+    try{
+      const response=await fetch(`${apiBase.replace(/\/$/,'')}/api/users/${encodeURIComponent(user.id)}`,{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({active:!user.active})});
+      const result=await response.json();
+      if(!response.ok||!result.user)throw new Error(result.error||'Account status could not be updated.');
+      setManagedUsers(current=>current.map(item=>item.id===user.id?{...item,...result.user}:item));
+      flash(`${user.displayName} account ${result.user.active?'activated':'deactivated'}.`);
+    }catch(error){flash(error instanceof Error?error.message:'Account status update failed.');}
+  };
+  const resetManagedUserPassword = async (user:typeof managedUsers[number]) => {
+    const password=window.prompt('New password for '+user.displayName+' (minimum 12 characters)');
+    if(!password)return;
+    if(password.length<12){flash('Use a password with at least 12 characters.');return;}
+    try{
+      const response=await fetch(`${apiBase.replace(/\/$/,'')}/api/users/${encodeURIComponent(user.id)}`,{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({password})});
+      const result=await response.json();
+      if(!response.ok||!result.user)throw new Error(result.error||'Password could not be reset.');
+      flash(`Password reset for ${user.displayName}.`);
+    }catch(error){flash(error instanceof Error?error.message:'Password reset failed.');}
+  };
+  useEffect(()=>{if(apiConnected&&view==='roles'&&['owner','manager'].includes(apiRole))void refreshUsers();},[apiConnected,apiToken,apiBase,apiRole,view]);
+  const rolesView = (): ReactNode => <section className={`${panel} p-5`}>
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Access control','User Roles & Permissions','Manage branch staff accounts, role assignments and account status')}{<button onClick={()=>void createManagedUser()} disabled={!apiConnected||!['owner','manager'].includes(apiRole)} className="rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b] disabled:opacity-40"><Plus size={14} className="mr-1 inline"/>Add staff account</button>}</div>
+    {!apiConnected&&<p className="mb-4 rounded-xl border border-amber-300/15 bg-amber-300/[.04] p-3 text-xs text-amber-100/80">Connect the live POS backend to manage staff accounts. Demo mode does not create login credentials.</p>}
+    {apiConnected&&!['owner','manager'].includes(apiRole)&&<p className="mb-4 text-xs text-amber-200/80">Only owners and managers can manage staff accounts.</p>}
+    <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{roleCatalog.map(role=><article key={role.role} className="rounded-xl border border-white/[.07] bg-[#191e24] p-4"><div className="font-semibold text-white">{role.label}</div><ul className="mt-3 space-y-2">{role.permissions.map(permission=><li key={permission} className="flex gap-2 text-xs leading-5 text-slate-400"><span className="text-[#e7b943]">•</span><span>{permission}</span></li>)}</ul></article>)}</div>
+    <div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold text-white">Branch staff accounts</h3><span className="text-xs text-slate-500">{managedUsers.length} accounts</span></div>
+    <div className="space-y-2">{managedUsers.map(user=><article key={user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/[.07] bg-[#191e24] p-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong className="text-sm text-white">{user.displayName}</strong><span className={`rounded-full px-2 py-1 text-[10px] ${user.active?'bg-emerald-400/10 text-emerald-300':'bg-slate-400/10 text-slate-400'}`}>{user.active?'Active':'Disabled'}</span></div><p className="mt-1 text-xs text-slate-400">{user.email} · {user.role}</p><p className="mt-1 text-[10px] text-slate-500">Created {new Date(user.createdAt).toLocaleDateString()}</p></div><div className="flex flex-wrap gap-2"><button onClick={()=>void changeManagedUserRole(user)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300">Change role</button><button onClick={()=>void resetManagedUserPassword(user)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300">Reset password</button><button onClick={()=>void toggleManagedUser(user)} className={`rounded-lg border px-3 py-2 text-xs ${user.active?'border-rose-400/20 text-rose-300':'border-emerald-400/20 text-emerald-300'}`}>{user.active?'Deactivate':'Activate'}</button></div></article>)}</div>
+    {apiConnected&&['owner','manager'].includes(apiRole)&&!managedUsers.length&&<p className="py-8 text-center text-sm text-slate-500">No staff accounts are available in this branch yet.</p>}
+  </section>;
+
+  const moduleMessages: Record<string,string> = { tables:'Manage table labels, seating capacity and branch-scoped occupancy status.', reservations:'Schedule guests, record party size and contact details, and track booked, seated, completed or cancelled reservations.', menu:'Create, edit, deactivate and reactivate products. Inactive products remain available for restoration.', categories:'Create, rename and delete categories. Categories with active products cannot be deleted.', recipes:'Manage recipes, estimate per-item ingredient cost and margin from current inventory unit costs, and check tracked stock capacity.', purchases:'Record goods received, add quantities to inventory and track supplier credit locally.', delivery:'Assign Home Delivery orders to branch delivery staff and track pickup and delivery status.', expenses:'Record shop operating expenses, payment method and expense date; review daily and monthly totals.', employees:'Manage employee profiles, monthly salaries and shift details in local POS storage.', attendance:'Update daily employee attendance status in local POS storage.', payroll:'Create monthly payroll, track salary advances, and record full or partial Cash/Mada salary payments.', reports:'Local totals are instant; a connected branch also shows server-verified sales, date filtering and CSV export.', profit:'Local totals stay available offline; a connected branch adds server-verified net sales, recipe-valued COGS and operating result.',  discounts:'Manage branch-scoped promo codes, discount rules, expiry dates and redemption limits.', roles:'Manage branch staff login accounts, role assignments, password resets and access status.', settings:'Restaurant and branch settings need completion.' };
   const selectedLabel = moduleGroups.flatMap(group=>group.items).find(item=>item.id===view)?.label || 'Dashboard';
   const placeholder = (): ReactNode => <section className={`${panel} p-6 md:p-8`}><div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#e7b943]/10 text-[#e7b943]"><Activity size={21}/></div><div className="mt-5">{heading('Module status',selectedLabel,'This module is listed for the complete product scope.')}</div><p className="mt-4 max-w-2xl text-sm leading-6 text-slate-400">{moduleMessages[view] || 'This module is planned but is not part of the current working demo.'}</p><div className="mt-6 rounded-xl border border-amber-300/15 bg-amber-300/[.04] p-4 text-xs leading-5 text-amber-100/70">This screen is intentionally marked as incomplete—no demo action or placeholder value is presented as a completed workflow.</div><button onClick={()=>setView('dashboard')} className="mt-5 rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-300 hover:border-white/20">Back to dashboard</button></section>;
   const restrictedHrView = (): ReactNode => <section className={`${panel} p-6`}>{heading('Access','Restricted','Your role does not have access to employee, attendance or payroll records.')}</section>;
-  const content: Record<string,()=>ReactNode> = { dashboard, pos, orders:ordersView, kitchen, delivery:deliveryView, tables:tablesView, reservations:reservationsView, menu:menuView, categories:categoriesView, inventory:inventoryView, recipes:recipesView, suppliers:suppliersView, purchases:purchasesView, customers:customersView, employees:canViewPayroll?employeesView:restrictedHrView, attendance:canManageHr?attendanceView:restrictedHrView, payroll:canViewPayroll?payrollView:restrictedHrView, expenses:expensesView, accounting, reports:reportsView, profit:profitView, discounts:discountsView, qr, settings:apiSettings };
+  const content: Record<string,()=>ReactNode> = { dashboard, pos, orders:ordersView, kitchen, delivery:deliveryView, tables:tablesView, reservations:reservationsView, menu:menuView, categories:categoriesView, inventory:inventoryView, recipes:recipesView, suppliers:suppliersView, purchases:purchasesView, customers:customersView, employees:canViewPayroll?employeesView:restrictedHrView, attendance:canManageHr?attendanceView:restrictedHrView, payroll:canViewPayroll?payrollView:restrictedHrView, expenses:expensesView, accounting, reports:reportsView, profit:profitView, discounts:discountsView, roles:rolesView, qr, settings:apiSettings };
   const activeContent = content[view] ? content[view]() : placeholder();
 
   return <div className={`${light?'theme-light':''} min-h-screen bg-[#0e1114] text-slate-100`}><div className="flex min-h-screen"><aside className={`fixed inset-y-0 left-0 z-40 flex w-[260px] flex-col border-r border-white/[.06] bg-[#111519] transition-transform lg:static lg:translate-x-0 ${mobileNav?'translate-x-0':'-translate-x-full'}`}><div className="flex h-[76px] items-center gap-3 border-b border-white/[.06] px-5"><div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-[#f0ca69] to-[#b37a18] font-serif text-xl font-black text-[#201707]">M</div><div><div className="font-serif text-lg font-bold tracking-wide text-white">Musafir</div><div className="text-[9px] uppercase tracking-[.28em] text-[#cba84c]">Fast Food</div></div><button onClick={()=>setMobileNav(false)} className="ml-auto text-slate-500 lg:hidden"><X size={19}/></button></div><div className="mx-3 mt-4 flex items-center gap-3 rounded-xl border border-white/[.06] bg-white/[.025] p-3"><div className="grid h-9 w-9 place-items-center rounded-full bg-[#e7b943] text-sm font-bold text-[#211908]">A</div><div className="min-w-0"><div className="text-sm font-medium text-white">Admin</div><div className="text-[11px] text-slate-500">Restaurant owner</div></div><span className="ml-auto h-2 w-2 rounded-full bg-emerald-400"/></div><nav className="custom-scrollbar flex-1 space-y-5 overflow-y-auto px-3 py-5">{moduleGroups.map(group=><div key={group.title}><div className="mb-2 px-3 text-[9px] font-bold uppercase tracking-[.2em] text-slate-600">{group.title}</div><div className="space-y-1">{group.items.map(item=><button key={item.id} onClick={()=>{setView(item.id);setMobileNav(false);}} className={`nav-item ${view===item.id?'nav-active':''}`}><item.icon size={16} strokeWidth={1.8}/><span className="flex-1 text-left">{item.label}</span>{item.id==='pos'&&cart.length>0&&<span className="rounded-full bg-[#e7b943] px-1.5 py-0.5 text-[10px] font-bold text-black">{cart.reduce((n,i)=>n+i.qty,0)}</span>}</button>)}</div></div>)}</nav><div className="border-t border-white/[.06] p-3"><div className="rounded-xl bg-gradient-to-r from-[#211d13] to-[#17191a] p-3"><div className="text-xs font-medium text-[#ead18b]">Good Food • Good Mood</div><div className="mt-1 text-[10px] text-slate-500">Premium service, made simple.</div></div><button onClick={()=>flash('Sign out requires authentication, which is not yet configured.')} className="mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs text-slate-500 hover:bg-white/[.04] hover:text-slate-300"><LogOut size={15}/>Sign out</button></div></aside>
