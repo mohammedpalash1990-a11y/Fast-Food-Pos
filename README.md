@@ -71,14 +71,59 @@ Tests: `npm test` (unit rules, no database) and `npm run test:transfer`
 - `GET /api/suppliers`, `POST /api/suppliers/:id/payments`, `GET /api/payables`: supplier balances/payments.
 - `POST /api/orders`: transactional order insertion and recipe stock deduction with stock row locks, negative-stock rejection, and organization-scoped customer validation.
 - `GET /api/customers`, `POST /api/customers`: organization-scoped customer directory and audited customer creation; POS checkout can attach a saved customer to an order.
-- `GET /api/menu`, `GET /api/menu/qr`: public menu and generated PNG QR code (requires a public hosted menu URL and branch id).
+- `GET /api/menu`, `GET /api/menu/qr`: public branch menu (active products only, branch metadata, 60s cache) and a generated PNG QR code. No authentication; IP rate limited; unknown or malformed branches are rejected with 400/404.
+- `GET /api/reports/sales`, `GET /api/reports/pnl`, `GET /api/reports/inventory`: read-only, branch-scoped reporting for owners, managers and accountants (inventory is also readable by `inventory`). Periods are business days in Asia/Riyadh and accept `range=Today|Last 7 days|This month|All time` or an explicit `from`/`to` pair; `format=csv` streams a CSV export.
 - `GET /api/health`: database connectivity.
 
 PostgreSQL schema supports organizations, branches, roles, users, products, categories, ingredient stock, recipes, customers, orders, payments, suppliers, purchases, stock movements and audit logs. The API scopes operational data by authenticated organization/branch and roles. Financial changes are transactionally recorded.
 
+## Reporting (verified totals from PostgreSQL)
+
+The dashboard keeps its instant local totals so the POS stays usable offline. When a branch
+is connected, the Sales Reports and Profit & Loss views also show server-verified figures
+computed by PostgreSQL for the selected period:
+
+- **Sales** — orders, subtotal, VAT, discounts, revenue and average order value, split by
+  order type, by day and by tender (Cash/Mada), plus best sellers. Cancelled orders are
+  excluded and reported separately instead of silently inflating sales.
+- **Profit & loss** — net sales (excluding the VAT recorded on the order), recipe-valued
+  cost of goods sold from `sale` stock movements at ingredient unit cost, gross profit and
+  margin, operating expenses, salary payments and the resulting operating result. Stock
+  write-offs and purchase figures are shown as memo lines: purchases are inventory
+  acquisitions, so they are never subtracted twice.
+- **Inventory** — tracked stock value at unit cost and reorder alerts.
+
+Periods follow the Asia/Riyadh business day (a sale at 23:59 local time belongs to that
+day), and every figure is scoped to the authenticated organization and branch. The reports
+are read-only — they never write to the database.
+
+```sh
+curl -H "Authorization: Bearer $TOKEN" "$API/api/reports/sales?range=Today"
+curl -H "Authorization: Bearer $TOKEN" "$API/api/reports/pnl?from=2026-11-01&to=2026-11-30&format=csv"
+```
+
+## Customer QR menu
+
+`menu.html` (also reachable at `/menu` on hosts that rewrite unknown paths to the SPA) is a
+standalone, customer-facing page that reads the public `GET /api/menu` endpoint:
+
+- Active products of the scanned branch, grouped into categories with SAR prices.
+- No login, no cart and no online payment — the guest orders at the counter (Cash/Mada only).
+- `GET /api/menu/qr?branchId=...&table=...` renders the scannable PNG; set
+  `PUBLIC_MENU_BASE_URL` to the hosted menu page. The POS QR module shows the live code once
+  a branch is connected and falls back to a demo placeholder otherwise.
+
 ## Frontend status and limitations
 
-The existing mobile-responsive admin UI and local demo workflows remain. The API is an initial backend foundation and is not yet fully connected to the React views: login UI/token lifecycle, inventory edit forms, purchase/payment UI, remote menu/order fetching, and database-to-dashboard reporting still need integration. The generated QR endpoint returns an actual PNG but needs deployment URL configuration; the customer ordering page itself is not yet built. No live payment gateway is configured. This is not yet production-ready: run typechecks, integration/security tests, create migrations/backups policy, and review the API before handling real financial data.
+The mobile-responsive admin UI and local demo workflows remain, and the POS works without a
+backend. Connected branches now also load menu, order history, inventory, purchasing,
+expenses, HR/payroll, reservations, tables, deliveries and **server-verified reports**, and
+the customer QR menu page is built. Still outstanding: inventory and purchase edit forms are
+local-first rather than fully API-driven, product/category management writes remain partly
+local, there is no live payment gateway or online ordering/payment flow, and no cash-drawer
+reconciliation, refunds or VAT filing. This is not yet production-ready: run typechecks,
+integration/security tests, and create a migrations/backups policy before handling real
+financial data.
 
 ## Useful commands
 
