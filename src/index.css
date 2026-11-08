@@ -326,11 +326,11 @@ img { display: block; max-width: 100%; }
 .theme-shell.theme-light .musafir-pos .text-white,
 .theme-shell.theme-light .musafir-pos .text-slate-100,
 .theme-shell.theme-light .musafir-pos .text-slate-200 { color: #26332c !important; }
-.theme-shell.theme-light .musafir-pos .bg-white\/\[.035\],
+.theme-shell.theme-light .musafir-pos .bg-white\/\[\.035\],
 .theme-shell.theme-light .musafir-pos .bg-black\/10,
 .theme-shell.theme-light .musafir-pos .bg-black\/20 { background: #f3f2ec !important; }
 .theme-shell.theme-light .musafir-pos .border-white\/10,
-.theme-shell.theme-light .musafir-pos .border-white\/\[.07\] { border-color: #e5e1d7 !important; }
+.theme-shell.theme-light .musafir-pos .border-white\/\[\.07\] { border-color: #e5e1d7 !important; }
 .theme-shell.theme-light .musafir-pos .text-\[\#e7b943\],
 .theme-shell.theme-light .musafir-pos .text-\[\#caa348\] { color: #9a7842 !important; }
 .theme-shell.theme-light .musafir-pos .bg-\[\#e7b943\] { background: #c4a36b !important; }
