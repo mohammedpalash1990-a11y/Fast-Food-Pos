@@ -90,9 +90,9 @@ const rolePermissions=[
 app.get('/api/roles/permissions',authenticate,allow('owner','manager'),asyncRoute(async(_req,res)=>res.json({roles:rolePermissions})));
 app.get('/api/users',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
   const rows=await pool.query(`SELECT id,email,display_name AS "displayName",role,active,created_at AS "createdAt"
-    FROM users WHERE organization_id=$1 AND branch_id=$2 AND ($3='owner' OR role NOT IN ('owner','manager'))
+    FROM users WHERE organization_id=$1 AND branch_id=$2 AND id<>$4 AND ($3='owner' OR role NOT IN ('owner','manager'))
     ORDER BY CASE role WHEN 'manager' THEN 0 ELSE 1 END,display_name`,
-    [req.user!.organizationId,req.user!.branchId,req.user!.role]);
+    [req.user!.organizationId,req.user!.branchId,req.user!.role,req.user!.id]);
   res.json({users:rows.rows});
 }));
 app.post('/api/users',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
