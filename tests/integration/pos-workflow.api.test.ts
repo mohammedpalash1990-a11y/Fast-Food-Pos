@@ -211,3 +211,52 @@ test('dine-in table rules, invalid payment methods, insufficient stock and idemp
   const afterCount = await db.query('SELECT count(*)::int AS count FROM orders WHERE organization_id=$1', [ids.org]);
   assert.equal(afterCount.rows[0].count, before.rows[0].count);
 });
+
+test('branch-scoped coupons validate, discount checkout totals and enforce expiry and usage limits', async () => {
+  const code = ('SAVE' + suffix).toUpperCase();
+  const created = await call('POST', '/api/coupons', {
+    code,
+    discountType: 'percent',
+    discountValue: 10,
+    minimumOrderAmount: 15,
+    maximumDiscount: 5,
+    usageLimit: 1
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.equal(created.body.coupon.code, code);
+
+  const preview = await call('POST', '/api/coupons/validate', { code: code.toLowerCase(), subtotal: 20 });
+  assert.equal(preview.status, 200, JSON.stringify(preview.body));
+  assert.equal(Number(preview.body.discount), 2);
+
+  const orderResult = await createOrder('Takeaway', 'Cash', { couponCode: code });
+  assert.equal(orderResult.status, 201, JSON.stringify(orderResult.body));
+  const order = (await db.query('SELECT subtotal,tax,discount,total,coupon_code FROM orders WHERE id=$1', [orderResult.body.order.id])).rows[0];
+  assert.equal(order.coupon_code, code);
+  assert.equal(Number(order.subtotal), 20);
+  assert.equal(Number(order.tax), 3);
+  assert.equal(Number(order.discount), 2);
+  assert.equal(Number(order.total), 21);
+  const redeemed = await db.query('SELECT usage_count FROM coupons WHERE organization_id=$1 AND branch_id=$2 AND code=$3', [ids.org, ids.branch, code]);
+  assert.equal(Number(redeemed.rows[0].usage_count), 1);
+
+  const exhausted = await call('POST', '/api/coupons/validate', { code, subtotal: 20 });
+  assert.equal(exhausted.status, 400);
+  assert.match(exhausted.body.error, /usage limit/i);
+
+  const expiredCode = ('OLD' + suffix).toUpperCase();
+  const expired = await call('POST', '/api/coupons', {
+    code: expiredCode,
+    discountType: 'fixed',
+    discountValue: 3,
+    startsAt: '2020-01-01T00:00:00.000Z',
+    expiresAt: '2020-01-02T00:00:00.000Z'
+  });
+  assert.equal(expired.status, 201, JSON.stringify(expired.body));
+  const stockBefore = Number((await db.query('SELECT stock FROM ingredients WHERE id=$1', [ids.ingredient])).rows[0].stock);
+  const rejected = await createOrder('Pickup', 'Cash', { couponCode: expiredCode });
+  assert.equal(rejected.status, 400);
+  assert.match(rejected.body.error, /expired/i);
+  const stockAfter = Number((await db.query('SELECT stock FROM ingredients WHERE id=$1', [ids.ingredient])).rows[0].stock);
+  assert.equal(stockAfter, stockBefore, 'invalid coupon checkout must not deduct stock');
+});
