@@ -9,6 +9,7 @@ const app = readFileSync(appPath, 'utf8');
 const css = readFileSync(cssPath, 'utf8');
 
 test('menu search is available on desktop and mobile and focuses the menu input', () => {
+  // JSX event expressions can contain `>`; use a cross-line match for the input attributes.
   assert.match(app, /onClick=\{focusMenuSearch\}[^>]*md:flex/);
   assert.match(app, /onClick=\{focusMenuSearch\}[^>]*md:hidden/);
   assert.match(app, /<input ref=\{menuSearchRef\}[\s\S]*?placeholder="Search menu\.\.\."/);
