@@ -97,6 +97,7 @@ function App() {
   const [cashPaymentAmount, setCashPaymentAmount] = useState('10');
   const [branchName, setBranchName] = useState(() => safeRead('musafir-branch-name', 'Musafir Fast Food'));
   const [receiptFooter, setReceiptFooter] = useState(() => safeRead('musafir-receipt-footer', 'Thank you for visiting Musafir!'));
+  const [kitchenAcceptanceRequired, setKitchenAcceptanceRequired] = useState(() => safeRead('musafir-kitchen-acceptance-required', false));
   const [discount, setDiscount] = useState('0');
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<{code:string;discount:number;discountType:string;discountValue:number}|null>(null);
@@ -168,7 +169,7 @@ function App() {
     let active=true;
     fetch(apiBase.replace(/\/$/,'')+'/api/settings',{headers:{Authorization:'Bearer '+apiToken}})
       .then(async response=>{const result=await response.json();if(!response.ok||!result.settings)throw new Error(result.error||'Branch settings could not be loaded.');return result.settings;})
-      .then(settings=>{if(active){setBranchName(settings.branchName||'Musafir Fast Food');setReceiptFooter(settings.receiptFooter||'Thank you for visiting Musafir!');}})
+      .then(settings=>{if(active){setBranchName(settings.branchName||'Musafir Fast Food');setReceiptFooter(settings.receiptFooter||'Thank you for visiting Musafir!');setKitchenAcceptanceRequired(Boolean(settings.kitchenAcceptanceRequired));}})
       .catch(error=>{if(active)flash(error instanceof Error?error.message:'Branch settings could not be loaded.');});
     return ()=>{active=false;};
   },[apiConnected,apiToken,apiBase]);
@@ -177,11 +178,12 @@ function App() {
     if(name.length<2||name.length>100||footer.length>200){flash('Branch name must be 2–100 characters and receipt footer 0–200 characters.');return;}
     if(apiConnected&&apiToken){
       try{
-        const response=await fetch(apiBase.replace(/\/$/,'')+'/api/settings',{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:'Bearer '+apiToken},body:JSON.stringify({branchName:name,receiptFooter:footer})});
+        const response=await fetch(apiBase.replace(/\/$/,'')+'/api/settings',{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:'Bearer '+apiToken},body:JSON.stringify({branchName:name,receiptFooter:footer,kitchenAcceptanceRequired})});
         const result=await response.json();
         if(!response.ok||!result.settings)throw new Error(result.error||'Branch configuration could not be saved.');
         setBranchName(result.settings.branchName);
         setReceiptFooter(result.settings.receiptFooter);
+        setKitchenAcceptanceRequired(Boolean(result.settings.kitchenAcceptanceRequired));
       }catch(error){flash(error instanceof Error?error.message:'Branch configuration could not be saved.');return;}
     }else{
       setBranchName(name);setReceiptFooter(footer);
@@ -449,6 +451,7 @@ function App() {
   },[appliedCouponCode,subtotal,apiConnected,apiToken,apiBase]);
   useEffect(() => { if (!apiConnected) save('musafir-branch-name', branchName); }, [branchName, apiConnected]);
   useEffect(() => { if (!apiConnected) save('musafir-receipt-footer', receiptFooter); }, [receiptFooter, apiConnected]);
+  useEffect(() => { if (!apiConnected) save('musafir-kitchen-acceptance-required', kitchenAcceptanceRequired); }, [kitchenAcceptanceRequired, apiConnected]);
   const filteredProducts = useMemo(() => products.filter(p => (category === 'All' || p.category === category) && p.name.toLowerCase().includes(search.toLowerCase())), [products, category, search]);
   const lowStock = inventory.filter(item => item.trackStock && item.stock <= item.reorderLevel);
   const todayOrders = orders.filter(order => new Date(order.createdAt).toDateString() === new Date().toDateString() && order.number !== 'HOLD');
@@ -693,6 +696,7 @@ function App() {
       saveSession('musafir-api-branch', branchId);
       saveSession('musafir-api-role', login.user.role || '');
       setApiToken(login.token); setApiBranchId(branchId); setApiRole(login.user.role || ''); setApiConnected(true);
+      setKitchenAcceptanceRequired(Boolean(settingsData.settings?.kitchenAcceptanceRequired));
       setApiPassword('');
       setApiMessage(`Connected to branch ${branchId}. ${productData.products.filter((item: {active:boolean})=>item.active).length} menu products, ${orderData.orders.length} orders and ${inventoryData.items.length} inventory items loaded.`);
     } catch (error) {
@@ -815,9 +819,10 @@ function App() {
     <div className="mb-4"><p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#caa348]">Branch configuration</p><h2 className="mt-1 text-lg font-semibold text-white">Restaurant identity & receipt</h2><p className="mt-1 text-xs text-slate-400">Save branch details to the live database and keep Saudi checkout defaults consistent.</p></div>
     <label className="mb-1 block text-xs text-slate-400">Branch display name</label><input value={branchName} onChange={event=>setBranchName(event.target.value)} maxLength={100} disabled={apiConnected&&!["owner","manager"].includes(apiRole)} className="field mb-3 w-full disabled:opacity-50"/>
     <label className="mb-1 block text-xs text-slate-400">Receipt footer</label><textarea value={receiptFooter} onChange={event=>setReceiptFooter(event.target.value)} maxLength={200} rows={2} disabled={apiConnected&&!["owner","manager"].includes(apiRole)} className="field mb-3 w-full resize-none disabled:opacity-50"/>
+    <label className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[.025] p-3 text-xs text-slate-300"><span><strong className="block text-white">Kitchen acceptance required</strong><span className="mt-1 block text-[11px] text-slate-500">When enabled, new paid orders wait in Pending until staff accept them.</span></span><input type="checkbox" checked={kitchenAcceptanceRequired} onChange={event=>setKitchenAcceptanceRequired(event.target.checked)} disabled={apiConnected&&!["owner","manager"].includes(apiRole)} className="h-4 w-4 accent-[#e7b943] disabled:opacity-50"/></label>
     <div className="mb-4 grid grid-cols-3 gap-2 rounded-xl border border-white/10 bg-white/[.025] p-3 text-center"><div><div className="text-[10px] text-slate-500">Currency</div><div className="mt-1 text-sm font-semibold text-white">SAR</div></div><div><div className="text-[10px] text-slate-500">VAT</div><div className="mt-1 text-sm font-semibold text-white">15%</div></div><div><div className="text-[10px] text-slate-500">Payments</div><div className="mt-1 text-xs font-semibold text-white">Cash · Mada</div></div></div>
     <button onClick={()=>void saveBranchConfiguration()} disabled={apiConnected&&!['owner','manager'].includes(apiRole)} className="rounded-xl bg-[#e7b943] px-4 py-2.5 text-sm font-semibold text-[#17130b] disabled:opacity-40">Save branch settings</button>
-    <p className="mt-3 text-[11px] text-slate-500">{apiConnected?'Branch identity and receipt footer are stored in PostgreSQL.':'Saved on this device until the backend is connected.'}</p>
+    <p className="mt-3 text-[11px] text-slate-500">{apiConnected?'Branch identity, receipt footer and kitchen acceptance preference are stored in PostgreSQL.':'Saved on this device until the backend is connected.'}</p>
   </section><section className={`${panel} max-w-2xl p-5 md:p-7`}>
     <div className="mb-5">{heading('Local data protection','POS backup & restore','Export or restore this device’s saved POS records. Restore replaces the current local data.')}</div>
     <div className="flex flex-wrap gap-2">
