@@ -155,10 +155,12 @@ app.post('/api/discounts',authenticate,allow('owner','manager'),asyncRoute(async
     const inserted=await client.query(`INSERT INTO discount_coupons
       (organization_id,branch_id,code,discount_type,discount_value,min_subtotal,max_discount,usage_limit,expires_at,created_by)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::timestamptz,$10)
+      ON CONFLICT(branch_id,code) DO NOTHING
       RETURNING id,code,discount_type AS "discountType",discount_value AS "discountValue",
       min_subtotal AS "minSubtotal",max_discount AS "maxDiscount",usage_limit AS "usageLimit",
       used_count AS "usedCount",expires_at AS "expiresAt",active,created_at AS "createdAt"`,
       [req.user!.organizationId,req.user!.branchId,code,d.discountType,d.discountValue,d.minSubtotal,d.maxDiscount??null,d.usageLimit??null,d.expiresAt??null,req.user!.id]);
+    if(!inserted.rowCount)throw Object.assign(new Error('A coupon with this code already exists in this branch'),{status:409});
     await audit(client,req.user!,'discount_coupon.created','discount_coupon',inserted.rows[0].id,inserted.rows[0]);
     return inserted.rows[0];
   });
