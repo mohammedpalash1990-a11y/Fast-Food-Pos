@@ -118,7 +118,7 @@ export default function CustomerMenu(){
           <p className="mt-5 text-center text-[10px] leading-5 text-[#8a9087]">No need to print. Your order is already saved in the restaurant order history.</p>
         </div>
       </div>
-    </section> : <div className="mx-auto grid max-w-6xl gap-6 px-4 py-6 sm:px-5 sm:py-8 lg:grid-cols-[minmax(0,1fr)_350px]">
+    </section> : !checkout ? <div className="mx-auto grid max-w-6xl gap-6 px-4 py-6 sm:px-5 sm:py-8 lg:grid-cols-[minmax(0,1fr)_350px]">
       <section className="min-w-0">
         <div className="relative mb-6 overflow-hidden rounded-[1.7rem] bg-[#102b25] px-6 py-8 text-[#f7f1e5] shadow-[0_18px_45px_rgba(16,43,37,.12)] sm:px-9 sm:py-10">
           <div aria-hidden="true" className="pointer-events-none absolute -right-10 -top-24 h-64 w-64 rounded-full border border-[#d8b66b]/20"/>
