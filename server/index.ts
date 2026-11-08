@@ -77,6 +77,63 @@ app.patch('/api/reservations/:id',authenticate,allow('owner','manager','cashier'
 app.get('/api/health',asyncRoute(async(_req,res)=>{await pool.query('SELECT 1');res.json({status:'ok',database:'connected'});}));
 app.post('/api/auth/login',authLimiter,asyncRoute(async(req,res)=>{const parsed=schema.login.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Enter a valid email and password'});const result=await pool.query('SELECT id,organization_id,branch_id,email,display_name,role,password_hash FROM users WHERE email=$1 AND active=true',[parsed.data.email.toLowerCase()]);const user=result.rows[0];if(!user||!await bcrypt.compare(parsed.data.password,user.password_hash))return res.status(401).json({error:'Email or password is incorrect'});const token=jwt.sign({sub:user.id},secret!,{expiresIn:'8h',issuer:'musafir-pos'});res.json({token,user:{id:user.id,email:user.email,displayName:user.display_name,role:user.role,organizationId:user.organization_id,branchId:user.branch_id}});}));
 app.get('/api/auth/me',authenticate,asyncRoute(async(req:AuthedRequest,res)=>res.json({user:req.user})));
+
+const rolePermissions=[
+  {role:'owner',label:'Owner',permissions:['All branch operations','Manage users and role assignments','Manage menu, inventory, finance and settings','View all reports and audit activity']},
+  {role:'manager',label:'Manager',permissions:['Manage daily POS and kitchen operations','Manage menu, inventory, suppliers and staff','Manage coupons, expenses and branch settings','View sales and profit reports','Cannot create or manage owner accounts']},
+  {role:'cashier',label:'Cashier',permissions:['Create and manage sales orders','Accept Cash and Mada payments','Manage customers, tables and reservations','Apply valid coupon codes','Cannot manage users, menu prices or inventory']},
+  {role:'kitchen',label:'Kitchen',permissions:['View kitchen tickets and order details','Advance kitchen order statuses','View branch menu and table context','Cannot access payments, payroll or settings']},
+  {role:'inventory',label:'Inventory',permissions:['Manage ingredients and stock adjustments','Receive purchases and manage suppliers','View stock movements','Cannot access payroll or user administration']},
+  {role:'accountant',label:'Accountant',permissions:['View sales, finance and profit reports','Manage expenses and supplier payments','View payroll and accounting records','Cannot create sales orders or manage users']},
+  {role:'delivery',label:'Delivery',permissions:['View assigned delivery orders','Update pickup and delivery status','View delivery customer and address details','Cannot access POS checkout, inventory or finance']}
+];
+app.get('/api/roles/permissions',authenticate,allow('owner','manager'),asyncRoute(async(_req,res)=>res.json({roles:rolePermissions})));
+app.get('/api/users',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
+  const rows=await pool.query(`SELECT id,email,display_name AS "displayName",role,active,created_at AS "createdAt"
+    FROM users WHERE organization_id=$1 AND branch_id=$2 AND ($3='owner' OR role NOT IN ('owner','manager'))
+    ORDER BY CASE role WHEN 'manager' THEN 0 ELSE 1 END,display_name`,
+    [req.user!.organizationId,req.user!.branchId,req.user!.role]);
+  res.json({users:rows.rows});
+}));
+app.post('/api/users',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
+  const parsed=z.object({email:z.string().trim().email().max(254),displayName:z.string().trim().min(2).max(100),password:z.string().min(12).max(128),role:z.enum(['owner','manager','cashier','kitchen','inventory','accountant','delivery'])}).strict().safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Enter a valid name, email, password (12+ characters) and role',details:parsed.error.flatten()});
+  const d=parsed.data,email=d.email.toLowerCase();
+  if(req.user!.role==='manager'&&['owner','manager'].includes(d.role))return res.status(403).json({error:'Managers can create staff accounts only'});
+  const existing=await pool.query('SELECT id FROM users WHERE organization_id=$1 AND lower(email)=lower($2)',[req.user!.organizationId,email]);
+  if(existing.rowCount)return res.status(409).json({error:'An account with this email already exists in this organization'});
+  const passwordHash=await bcrypt.hash(d.password,12);
+  const result=await inTransaction(async client=>{
+    const saved=await client.query(`INSERT INTO users(organization_id,branch_id,email,password_hash,display_name,role)
+      VALUES($1,$2,$3,$4,$5,$6) RETURNING id,email,display_name AS "displayName",role,active,created_at AS "createdAt"`,
+      [req.user!.organizationId,req.user!.branchId,email,passwordHash,d.displayName,d.role]);
+    await audit(client,req.user!,'user.created','user',saved.rows[0].id,{email,role:d.role});
+    return saved.rows[0];
+  });
+  res.status(201).json({user:result});
+}));
+app.patch('/api/users/:id',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
+  const parsed=z.object({displayName:z.string().trim().min(2).max(100).optional(),role:z.enum(['owner','manager','cashier','kitchen','inventory','accountant','delivery']).optional(),active:z.boolean().optional(),password:z.string().min(12).max(128).optional()}).strict().refine(d=>Object.keys(d).length>0).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Provide a valid account change',details:parsed.error.flatten()});
+  const d=parsed.data,userId=String(req.params.id);
+  if(userId===req.user!.id)return res.status(409).json({error:'You cannot change your own role, password or active status from this screen'});
+  const current=await pool.query('SELECT id,role FROM users WHERE id=$1 AND organization_id=$2 AND branch_id=$3',[userId,req.user!.organizationId,req.user!.branchId]);
+  if(!current.rowCount)return res.status(404).json({error:'User not found in this branch'});
+  if(req.user!.role==='manager'&&['owner','manager'].includes(String(current.rows[0].role)))return res.status(403).json({error:'Managers cannot change owner or manager accounts'});
+  if(req.user!.role==='manager'&&d.role&&['owner','manager'].includes(d.role))return res.status(403).json({error:'Managers cannot assign owner or manager roles'});
+  const passwordHash=d.password?await bcrypt.hash(d.password,12):null;
+  const saved=await inTransaction(async client=>{
+    const updated=await client.query(`UPDATE users SET display_name=COALESCE($1,display_name),role=COALESCE($2,role),
+      active=COALESCE($3,active),password_hash=COALESCE($4,password_hash)
+      WHERE id=$5 AND organization_id=$6 AND branch_id=$7
+      RETURNING id,email,display_name AS "displayName",role,active,created_at AS "createdAt"`,
+      [d.displayName??null,d.role??null,d.active??null,passwordHash,userId,req.user!.organizationId,req.user!.branchId]);
+    await audit(client,req.user!,'user.updated','user',userId,{displayNameChanged:d.displayName!==undefined,roleChanged:d.role!==undefined,activeChanged:d.active!==undefined,passwordChanged:d.password!==undefined});
+    return updated.rows[0];
+  });
+  res.json({user:saved});
+}));
+
 const menuQuery=z.object({branchId:z.string().uuid()});
 // Public customer menu (no authentication). Only active products of the branch's
 // own organization are exposed; the payload is identical for the POS login
