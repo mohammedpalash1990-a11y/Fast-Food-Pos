@@ -187,7 +187,7 @@ app.post('/api/discounts/preview',authenticate,allow('owner','manager','cashier'
   const subtotal=parsed.data.items.reduce((sum,item)=>sum+(byId.get(item.productId)||0)*item.quantity,0);
   const result=await pool.query(`SELECT discount_type,discount_value,min_subtotal,max_discount,usage_limit,used_count
     FROM discount_coupons WHERE organization_id=$1 AND branch_id=$2 AND code=$3 AND active=true
-    AND (expires_at IS NULL OR expires_at>now()) AND (usage_limit IS NULL OR used_count<usage_limit)`,
+    AND (starts_at IS NULL OR starts_at<=now()) AND (expires_at IS NULL OR expires_at>now()) AND (usage_limit IS NULL OR used_count<usage_limit)`,
     [req.user!.organizationId,req.user!.branchId,parsed.data.code.toUpperCase()]);
   if(!result.rowCount)return res.status(404).json({error:'Coupon is invalid, expired, inactive or fully redeemed'});
   const discount=couponDiscount(result.rows[0],subtotal);
