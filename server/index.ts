@@ -254,6 +254,46 @@ app.get('/api/expenses',authenticate,allow('owner','manager','accountant'),async
 app.post('/api/expenses',authenticate,allow('owner','manager','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{const parsed=schema.expense.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid expense',details:parsed.error.flatten()});const d=parsed.data;const result=await inTransaction(async client=>{const inserted=await client.query(`INSERT INTO expenses(organization_id,branch_id,category,description,amount,payment_method,expense_date,created_by) VALUES($1,$2,$3,$4,$5,$6,$7::date,$8) RETURNING id,category,description,amount,payment_method AS "paymentMethod",expense_date::text AS date,created_at AS "createdAt"`,[req.user!.organizationId,req.user!.branchId,d.category,d.description,d.amount,d.paymentMethod,d.date,req.user!.id]);await audit(client,req.user!,'expense.created','expense',inserted.rows[0].id,d);return inserted.rows[0];});res.status(201).json({expense:result});}));
 app.delete('/api/expenses/:id',authenticate,allow('owner','manager','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{const result=await inTransaction(async client=>{const deleted=await client.query('DELETE FROM expenses WHERE id=$1 AND organization_id=$2 AND branch_id=$3 RETURNING id,category,description,amount',[String(req.params.id),req.user!.organizationId,req.user!.branchId]);if(!deleted.rowCount)throw Object.assign(new Error('Expense not found'),{status:404});await audit(client,req.user!,'expense.deleted','expense',deleted.rows[0].id,deleted.rows[0]);return deleted.rows[0];});res.json({success:true,expense:result});}));
 
+const reportDate=z.string().refine(value=>{const date=new Date(value+'T00:00:00Z');return /^\\d{4}-\\d{2}-\\d{2}$/.test(value)&&Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===value;},'Use a real date in YYYY-MM-DD format');
+app.get('/api/reports/summary',authenticate,allow('owner','manager','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{
+  const parsed=z.object({from:reportDate,to:reportDate}).refine(v=>v.from<=v.to).safeParse({from:req.query.from,to:req.query.to});
+  if(!parsed.success)return res.status(400).json({error:'Provide a valid date range (from/to: YYYY-MM-DD)'});
+  const {from,to}=parsed.data;
+  const scope=[req.user!.organizationId,req.user!.branchId,from,to];
+  const [sales,byMethod,byType,daily,expenses,purchases,purchasePayments,payroll]=await Promise.all([
+    pool.query(`SELECT COUNT(*) FILTER(WHERE status<>'Cancelled')::int AS orders,
+      COALESCE(SUM(total) FILTER(WHERE status<>'Cancelled'),0) AS revenue,
+      COALESCE(SUM(subtotal) FILTER(WHERE status<>'Cancelled'),0) AS subtotal,
+      COALESCE(SUM(tax) FILTER(WHERE status<>'Cancelled'),0) AS tax,
+      COALESCE(SUM(discount) FILTER(WHERE status<>'Cancelled'),0) AS discounts
+      FROM orders WHERE organization_id=$1 AND branch_id=$2 AND created_at >= $3::date AND created_at < ($4::date + interval '1 day')`,scope),
+    pool.query(`SELECT method,COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS amount
+      FROM payments WHERE organization_id=$1 AND branch_id=$2 AND order_id IS NOT NULL AND created_at >= $3::date AND created_at < ($4::date + interval '1 day') GROUP BY method ORDER BY method`,scope),
+    pool.query(`SELECT order_type AS type,COUNT(*)::int AS orders,COALESCE(SUM(total),0) AS revenue
+      FROM orders WHERE organization_id=$1 AND branch_id=$2 AND status<>'Cancelled' AND created_at >= $3::date AND created_at < ($4::date + interval '1 day') GROUP BY order_type ORDER BY order_type`,scope),
+    pool.query(`SELECT created_at::date::text AS date,COUNT(*) FILTER(WHERE status<>'Cancelled')::int AS orders,
+      COALESCE(SUM(total) FILTER(WHERE status<>'Cancelled'),0) AS revenue
+      FROM orders WHERE organization_id=$1 AND branch_id=$2 AND created_at >= $3::date AND created_at < ($4::date + interval '1 day') GROUP BY created_at::date ORDER BY created_at::date`,scope),
+    pool.query(`SELECT category,COALESCE(SUM(amount),0) AS amount FROM expenses
+      WHERE organization_id=$1 AND branch_id=$2 AND expense_date BETWEEN $3::date AND $4::date GROUP BY category ORDER BY category`,scope),
+    pool.query(`SELECT COUNT(*)::int AS invoices,COALESCE(SUM(total),0) AS total,COALESCE(SUM(paid),0) AS paid,
+      COALESCE(SUM(total-paid),0) AS outstanding FROM purchases
+      WHERE organization_id=$1 AND branch_id=$2 AND status='received' AND created_at >= $3::date AND created_at < ($4::date + interval '1 day')`,scope),
+    pool.query(`SELECT COALESCE(SUM(amount),0) AS paid FROM payments
+      WHERE organization_id=$1 AND branch_id=$2 AND supplier_id IS NOT NULL AND direction='out'
+      AND created_at >= $3::date AND created_at < ($4::date + interval '1 day')`,scope),
+    pool.query(`SELECT COALESCE(SUM(pp.amount),0) AS paid FROM payroll_payments pp
+      WHERE pp.organization_id=$1 AND pp.branch_id=$2 AND pp.payment_date BETWEEN $3::date AND $4::date`,scope)
+  ]);
+  const summary=sales.rows[0];
+  const expenseTotal=expenses.rows.reduce((sum,row)=>sum+Number(row.amount),0);
+  const purchase=purchases.rows[0];
+  const purchasePaidOutflow=Number(purchasePayments.rows[0].paid);
+  const payrollPaid=Number(payroll.rows[0].paid);
+  const revenue=Number(summary.revenue);
+  const operatingOutflow=expenseTotal+purchasePaidOutflow+payrollPaid;
+  res.json({period:{from,to},sales:{...summary,averageOrderValue:Number(summary.orders)?revenue/Number(summary.orders):0,byPaymentMethod:byMethod.rows,byOrderType:byType.rows,daily:daily.rows},expenses:{total:expenseTotal,byCategory:expenses.rows},purchases:purchase,payroll:{paid:payrollPaid},purchasePayments:{paid:purchasePaidOutflow},operatingOutflow,netAfterRecordedOutflows:revenue-operatingOutflow});
+}));
 app.get('/api/deliveries',authenticate,allow('owner','manager','cashier','delivery'),asyncRoute(async(req:AuthedRequest,res)=>{
   const [rows,drivers]=await Promise.all([
     pool.query(`SELECT d.id,d.order_id,o.order_number,o.status AS order_status,o.total,o.created_at AS order_created_at,
