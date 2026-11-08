@@ -11,7 +11,7 @@ const css = readFileSync(cssPath, 'utf8');
 test('menu search is available on desktop and mobile and focuses the menu input', () => {
   assert.match(app, /onClick=\{focusMenuSearch\}[^>]*md:flex/);
   assert.match(app, /onClick=\{focusMenuSearch\}[^>]*md:hidden/);
-  assert.match(app, /<input ref=\{menuSearchRef\}[^>]*placeholder="Search menu\.\.\."/);
+  assert.match(app, /<input ref=\{menuSearchRef\}[\s\S]*?placeholder="Search menu\.\.\."/);
   assert.match(app, /event\.key\.toLowerCase\(\) !== 'k'/);
   assert.match(app, /event\.metaKey \|\| event\.ctrlKey/);
   assert.match(app, /menuSearchRef\.current\?\.focus\(\)/);
