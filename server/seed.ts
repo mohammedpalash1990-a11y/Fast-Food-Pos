@@ -15,6 +15,9 @@ if (process.env.NODE_ENV === 'production') {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || password.length > 128) {
     throw new Error('BOOTSTRAP_ADMIN_EMAIL must be valid and BOOTSTRAP_ADMIN_PASSWORD must contain 12–128 characters.');
   }
+  if (!jwtSecret || jwtSecret.length < 32) {
+    throw new Error('JWT_SECRET must be set to at least 32 characters before production owner bootstrap.');
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
