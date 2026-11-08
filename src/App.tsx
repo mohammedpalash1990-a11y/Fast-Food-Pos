@@ -474,7 +474,7 @@ function App() {
     const method = (window.prompt(`Collect ${currency(due)} by Cash or Mada`, 'Cash') || '').trim();
     if (method !== 'Cash' && method !== 'Mada') { flash('Payment method must be Cash or Mada.'); return; }
     try {
-      const response = await fetch(`${apiBase.replace(/\\/$/, '')}/api/orders/${encodeURIComponent(order.id)}/payments`, {
+      const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/orders/${encodeURIComponent(order.id)}/payments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiToken}` },
         body: JSON.stringify({ amount: due, method, note: 'QR order payment collected at POS' })
@@ -499,7 +499,7 @@ function App() {
     if (status === 'Cancelled' && !window.confirm(`Cancel order #${order.number}? Any collected payment will be recorded as a refund.`)) return;
     if (apiConnected && apiToken) {
       try {
-        const response = await fetch(`${apiBase.replace(/\\/$/, '')}/api/orders/${encodeURIComponent(order.id)}/status`, {
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/orders/${encodeURIComponent(order.id)}/status`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiToken}` },
           body: JSON.stringify({ status })
