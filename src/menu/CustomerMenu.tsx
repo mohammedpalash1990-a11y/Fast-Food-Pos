@@ -25,7 +25,7 @@ export default function CustomerMenu(){
   const [submitting,setSubmitting]=useState(false);
   const [checkoutKey,setCheckoutKey]=useState('');
   const [checkoutFingerprint,setCheckoutFingerprint]=useState('');
-  const [success,setSuccess]=useState<{number:string|number;total:number}|null>(null);
+  const [success,setSuccess]=useState<{number:string|number;total:number;items:{name:string;price:number;quantity:number}[]}|null>(null);
 
   useEffect(()=>{
     if(!branchId){setError('This QR menu link is missing its restaurant branch. Scan the QR code again.');setLoading(false);return;}
@@ -73,7 +73,7 @@ export default function CustomerMenu(){
       });
       const result=await response.json();
       if(!response.ok)throw new Error(result.error||'Your order could not be submitted.');
-      setSuccess({number:result.order.order_number,total:Number(result.order.total)});
+      setSuccess({number:result.order.order_number,total:Number(result.order.total),items:cartItems.map(item=>({name:item.product.name,price:Number(item.product.price),quantity:item.quantity}))});
       setCart({});
       setCheckoutKey('');
       setCheckoutFingerprint('');
@@ -107,7 +107,8 @@ export default function CustomerMenu(){
         </div>
         <div className="px-6 py-7 sm:px-12 sm:py-9">
           <div className="flex items-end justify-between border-b border-[#e8e1d4] pb-4"><div><p className="text-[9px] font-bold uppercase tracking-[.22em] text-[#a17b22]">Order summary</p><p className="mt-1 text-sm font-semibold text-[#18382f]">{menu?.branch.name||'Musafir Fast Food'}</p><p className="mt-1 text-[11px] text-[#78837d]">{orderType}{orderType==='Dine-in'&&tableNumber?' · Table '+tableNumber:''}</p></div><strong className="font-serif text-2xl text-[#145044]">{money(success.total)}</strong></div>
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-xs text-[#78837d]"><span>Payment: Cash or Mada</span><span>VAT included · 15%</span></div>
+          <div className="mt-5 space-y-3 border-b border-[#e8e1d4] pb-5">{success.items.map((item,index)=><div key={index} className="flex items-center justify-between gap-4 text-xs"><span className="min-w-0 text-[#52645b]">{item.quantity} × {item.name}</span><strong className="shrink-0 text-[#203b32]">{money(item.price*item.quantity)}</strong></div>)}</div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-[#78837d]"><span>Payment: Cash or Mada</span><span>VAT included · 15%</span></div>
           <div className="mt-7 grid gap-3 sm:grid-cols-2">
             <button type="button" onClick={()=>window.print()} className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#c6a66b] bg-[#fffdf8] px-5 py-3.5 text-xs font-bold uppercase tracking-[.12em] text-[#18382f] transition hover:bg-[#f4f0e7]"><span aria-hidden="true">▤</span> Print receipt</button>
             <button type="button" onClick={()=>{setSuccess(null);setCustomerName('');setPhone('');setAddress('');setNotes('');setError('');}} className="rounded-xl bg-[#145044] px-5 py-3.5 text-xs font-bold uppercase tracking-[.12em] text-white transition hover:bg-[#0e3d34]">Back to menu</button>
