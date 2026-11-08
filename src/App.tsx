@@ -886,7 +886,7 @@ function App() {
       const response=await fetch(`${apiBase.replace(/\/$/,'')}/api/deliveries/${order.id}/assign`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({driverId:driver.id,address,note})});
       const result=await response.json();
       if(!response.ok||!result.delivery)throw new Error(result.error||'Delivery assignment failed.');
-      flash(`Order #{order.number} assigned to ${driver.display_name}.`);
+      flash(`Order #${order.number} assigned to ${driver.display_name}.`);
       const refresh=await fetch(`${apiBase.replace(/\/$/,'')}/api/deliveries`,{headers:{Authorization:`Bearer ${apiToken}`}});
       const data=await refresh.json();
       if(refresh.ok){setDeliveries(data.deliveries||[]);setDeliveryDrivers(data.drivers||[]);}
