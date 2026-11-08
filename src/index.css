@@ -30,3 +30,57 @@ img { display: block; max-width: 100%; }
 .theme-light footer { color:#6b7780!important; border-top-color:rgba(23,28,34,.12)!important; }
 .theme-light .custom-scrollbar::-webkit-scrollbar-thumb { background:rgba(23,28,34,.22); }
 @media print { body { background:#fff!important; color:#111!important; } aside, header, footer, button { display:none!important; } main { padding:0!important; } }
+
+/* Musafir Cafe-inspired POS workspace: cream surfaces, deep green actions, and gold accents. */
+.musafir-pos { color: #1d3029; }
+.musafir-pos .musafir-surface { background: #fbf9f2; border-color: #ded8ca; color: #1d3029; box-shadow: 0 2px 10px rgba(31,48,39,.045); }
+.musafir-pos .text-white { color: #1d3029 !important; }
+.musafir-pos .text-slate-300, .musafir-pos .text-slate-400 { color: #68766e !important; }
+.musafir-pos .text-slate-500, .musafir-pos .text-slate-600 { color: #879188 !important; }
+.musafir-pos .bg-white\/\[.035\], .musafir-pos .bg-black\/20, .musafir-pos .bg-black\/10 { background: #f0ede4 !important; }
+.musafir-pos .bg-\[\\#191e24\] { background: #fff !important; }
+.musafir-pos .border-white\/\[.07\], .musafir-pos .border-white\/10 { border-color: #e2ddcf !important; }
+.musafir-pos .field { background: #fff; border-color: #d9d2c3; color: #1d3029; }
+.musafir-pos .field::placeholder { color: #89938c; }
+.musafir-pos .qty-btn { background: #e9efe8; color: #145044; }
+.musafir-pos .qty-btn:hover { background: #dcebdd; color: #0e3f32; }
+.musafir-pos .text-\[\\#e7b943\] { color: #946f19 !important; }
+.musafir-pos button:focus-visible { outline-color: #c99b2e; }
+@media (min-width: 1536px) { .musafir-pos { align-items: start; } }
+
+/* Responsive POS layout: fit each viewport without horizontal scrolling. */
+.musafir-pos,
+.musafir-pos > section,
+.musafir-pos > aside { min-width: 0; max-width: 100%; }
+.musafir-pos { width: 100%; grid-template-columns: minmax(0, 1fr); }
+.musafir-pos .musafir-surface { min-width: 0; }
+.musafir-pos input,
+.musafir-pos select,
+.musafir-pos textarea { min-width: 0; max-width: 100%; }
+.musafir-pos img { max-width: 100%; }
+@media (min-width: 768px) and (max-width: 1535px) {
+  .musafir-pos { grid-template-columns: minmax(0, 1fr) minmax(290px, 360px); align-items: start; }
+  .musafir-pos > aside:last-child { grid-column: 1 / -1; min-height: 300px; max-height: 420px; }
+}
+@media (min-width: 1536px) {
+  .musafir-pos { grid-template-columns: minmax(0, 1.12fr) minmax(330px, .9fr) minmax(290px, .82fr); align-items: stretch; }
+  .musafir-pos > aside:last-child { grid-column: auto; max-height: min(78vh, 860px); }
+}
+@media (max-width: 767px) {
+  .musafir-pos { gap: 12px; }
+  .musafir-pos > section,
+  .musafir-pos > aside { padding: 12px !important; border-radius: 14px; }
+  .musafir-pos > section > div:first-child { align-items: flex-start; }
+  .musafir-pos > section > div:first-child > div:last-child { max-width: 100%; flex-wrap: wrap; }
+  .musafir-pos > section .grid.grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .musafir-pos > section .grid.grid-cols-2.sm\\:grid-cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .musafir-pos > aside .max-h-\\[34vh\\] { max-height: 32vh; }
+  .musafir-pos > aside:last-child { min-height: 280px; max-height: 55vh; }
+  .musafir-pos button { touch-action: manipulation; }
+}
+@media (max-width: 380px) {
+  .musafir-pos > section,
+  .musafir-pos > aside { padding: 10px !important; }
+  .musafir-pos > section .grid.grid-cols-2 { gap: 7px; }
+  .musafir-pos > section button { overflow-wrap: anywhere; }
+}

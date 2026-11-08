@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import PublicMenu from './menu/PublicMenu';
+import CustomerMenu from './menu/CustomerMenu';
 import './index.css';
 
 // `/menu` is the customer-facing QR menu. Hosts that rewrite unknown paths to
@@ -12,6 +12,6 @@ const isPublicMenu = path === '/menu' || path === '/menu.html';
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    {isPublicMenu ? <PublicMenu /> : <App />}
+    {isPublicMenu ? <CustomerMenu /> : <App />}
   </React.StrictMode>
 );

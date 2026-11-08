@@ -12,7 +12,7 @@ import { Pool } from 'pg';
 const MIGRATION_ORDER = [
   '001_initial.sql', '002_team_payroll.sql', '003_reservations.sql', '004_restaurant_tables.sql',
   '005_delivery_dispatch.sql', '006_order_table_assignment.sql', '007_order_idempotency.sql',
-  '008_payroll_hardening.sql', '009_reporting_indexes.sql', '010_branch_settings.sql', '011_discount_coupons.sql', '012_branch_configuration.sql'
+  '008_payroll_hardening.sql', '009_reporting_indexes.sql', '010_branch_settings.sql', '011_discount_coupons.sql', '012_branch_configuration.sql', '013_qr_order_channel.sql'
 ];
 
 const neonUrl = process.env.NEON_DATABASE_URL;

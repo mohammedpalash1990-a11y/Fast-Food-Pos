@@ -24,6 +24,7 @@ const authLimiter=rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:true,l
 // The customer QR menu is public: it is rate limited per IP so a single client
 // cannot hammer the branch menu, and it never exposes anything beyond the menu.
 const publicMenuLimiter=rateLimit({windowMs:60*1000,limit:120,standardHeaders:true,legacyHeaders:false});
+const publicQrOrderLimiter=rateLimit({windowMs:60*1000,limit:8,standardHeaders:true,legacyHeaders:false});
 const secret=process.env.JWT_SECRET; if(!secret||secret.length<32) throw new Error('JWT_SECRET must be set to at least 32 characters');
 const schema={login:z.object({email:z.string().email().max(254),password:z.string().min(1).max(128)}),category:z.object({name:z.string().trim().min(1).max(80)}),product:z.object({sku:z.string().trim().min(1).max(40),name:z.string().trim().min(1).max(120),description:z.string().trim().max(1000).default(''),categoryId:z.string().uuid().nullable().optional(),price:z.number().min(0).max(1000000),imageUrl:z.string().trim().max(2000).default(''),active:z.boolean().optional()}),customer:z.object({name:z.string().trim().min(1).max(120),phone:z.string().trim().max(40).default(''),address:z.string().trim().max(300).default('')}),supplier:z.object({name:z.string().trim().min(1).max(120),phone:z.string().trim().max(40).default(''),category:z.string().trim().max(80).default('')}),inventory:z.object({name:z.string().trim().min(1).max(120),sku:z.string().trim().min(1).max(40),category:z.string().max(80),unit:z.string().min(1).max(24),stock:z.number().min(0).default(0),trackStock:z.boolean().optional(),reorderLevel:z.number().min(0).default(0),unitCost:z.number().min(0).default(0),supplierId:z.string().uuid().optional().nullable(),expiresOn:z.string().optional().nullable()}),purchase:z.object({supplierId:z.string().uuid(),invoiceNumber:z.string().trim().min(1).max(80),paid:z.number().min(0),paymentMethod:z.enum(['Cash','Mada']).default('Cash'),items:z.array(z.object({ingredientId:z.string().uuid(),quantity:z.number().positive(),unitCost:z.number().min(0)})).min(1)}),payment:z.object({amount:z.number().positive(),method:z.enum(['Cash','Mada']),note:z.string().max(500).optional()}),expense:z.object({category:z.string().trim().min(1).max(80),description:z.string().trim().min(1).max(300),amount:z.number().positive().max(10000000),paymentMethod:z.enum(['Cash','Mada']),date:z.string().regex(/^\d{4}-\d{2}-\d{2}$/)}),reservation:z.object({guestName:z.string().trim().min(1).max(120),phone:z.string().trim().max(40).default(''),partySize:z.number().int().min(1).max(30),reservedFor:z.string().datetime(),notes:z.string().trim().max(500).default('')}),table:z.object({tableNumber:z.string().trim().min(1).max(24),seats:z.number().int().min(1).max(30).default(2),notes:z.string().trim().max(300).default('')}),delivery:z.object({driverId:z.string().uuid(),address:z.string().trim().max(500).default(''),note:z.string().trim().max(500).default('')}),order:z.object({orderType:z.enum(['Dine-in','Takeaway','Pickup','Home Delivery']),tableId:z.string().uuid().optional().nullable(),customerId:z.string().uuid().optional().nullable(),paymentMethod:z.enum(['Cash','Mada']).default('Cash'),discount:z.number().min(0).default(0),taxRate:z.number().min(0).max(1).default(.15),notes:z.string().max(1000).optional(),couponCode:z.string().trim().max(40).optional(),items:z.array(z.object({productId:z.string().uuid(),quantity:z.number().int().positive().max(99)})).min(1),payments:z.array(z.object({method:z.enum(['Cash','Mada']),amount:z.number().positive().max(10000000)})).min(1).max(2).optional()})};
 const allow=(...roles:Role[])=> (req:AuthedRequest,res:Response,next:NextFunction)=>{if(!req.user)return res.status(401).json({error:'Authentication required'}); if(!roles.includes(req.user.role))return res.status(403).json({error:'Insufficient permission'}); next();};
@@ -206,12 +207,97 @@ app.put('/api/products/:id/recipe',authenticate,allow('owner','manager'),asyncRo
 app.post('/api/products',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{const parsed=schema.product.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Invalid product details',details:parsed.error.flatten()});const d=parsed.data;const result=await inTransaction(async client=>{if(d.categoryId){const category=await client.query('SELECT id FROM categories WHERE id=$1 AND organization_id=$2',[d.categoryId,req.user!.organizationId]);if(!category.rowCount)throw Object.assign(new Error('Category not found'),{status:404});}const inserted=await client.query('INSERT INTO products(organization_id,category_id,sku,name,description,price,image_url) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,sku,name,description,price,image_url AS "imageUrl",active,category_id AS "categoryId"',[req.user!.organizationId,d.categoryId||null,d.sku,d.name,d.description,d.price,d.imageUrl]);await audit(client,req.user!,'product.created','product',inserted.rows[0].id,d);return inserted.rows[0];});res.status(201).json({product:result});}));
 app.patch('/api/products/:id',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{const parsed=schema.product.partial().safeParse(req.body);if(!parsed.success||!Object.keys(parsed.data||{}).length)return res.status(400).json({error:'Invalid product details'});const d=parsed.data;const result=await inTransaction(async client=>{const current=await client.query('SELECT id FROM products WHERE id=$1 AND organization_id=$2 FOR UPDATE',[String(req.params.id),req.user!.organizationId]);if(!current.rowCount)throw Object.assign(new Error('Product not found'),{status:404});if(d.categoryId){const category=await client.query('SELECT id FROM categories WHERE id=$1 AND organization_id=$2',[d.categoryId,req.user!.organizationId]);if(!category.rowCount)throw Object.assign(new Error('Category not found'),{status:404});}const updated=await client.query('UPDATE products SET sku=COALESCE($3,sku),name=COALESCE($4,name),description=COALESCE($5,description),price=COALESCE($6,price),image_url=COALESCE($7,image_url),category_id=CASE WHEN $8 THEN $9::uuid ELSE category_id END,active=COALESCE($10,active) WHERE id=$1 AND organization_id=$2 RETURNING id,sku,name,description,price,image_url AS "imageUrl",active,category_id AS "categoryId"',[String(req.params.id),req.user!.organizationId,d.sku,d.name,d.description,d.price,d.imageUrl,d.categoryId!==undefined,d.categoryId??null,(req.body as {active?:boolean}).active]);await audit(client,req.user!,'product.updated','product',updated.rows[0].id,d);return updated.rows[0];});res.json({product:result});}));
 app.delete('/api/products/:id',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{const result=await inTransaction(async client=>{const updated=await client.query('UPDATE products SET active=false WHERE id=$1 AND organization_id=$2 AND active=true RETURNING id,name',[String(req.params.id),req.user!.organizationId]);if(!updated.rowCount)throw Object.assign(new Error('Active product not found'),{status:404});await audit(client,req.user!,'product.deactivated','product',updated.rows[0].id,updated.rows[0]);return updated.rows[0];});res.json({success:true,product:result});}));
+
+const publicQrOrderSchema=z.object({
+  branchId:z.string().uuid(),
+  customerName:z.string().trim().min(2).max(120),
+  phone:z.string().trim().min(5).max(40),
+  address:z.string().trim().max(300).default(''),
+  orderType:z.enum(['Dine-in','Pickup','Home Delivery']),
+  tableNumber:z.string().trim().max(24).optional(),
+  notes:z.string().trim().max(500).default(''),
+  items:z.array(z.object({productId:z.string().uuid(),quantity:z.number().int().positive().max(99)})).min(1).max(30)
+});
+app.post('/api/qr/orders',publicQrOrderLimiter,asyncRoute(async(req,res)=>{
+  const parsed=publicQrOrderSchema.safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Please check your contact details and order items',details:parsed.error.flatten()});
+  const d=parsed.data;
+  if(d.orderType==='Dine-in'&&!d.tableNumber)return res.status(400).json({error:'This table QR code is missing its table number'});
+  if(d.orderType!=='Dine-in'&&d.tableNumber)return res.status(400).json({error:'A table number can only be used for dine-in orders'});
+  if(d.orderType==='Home Delivery'&&!d.address.trim())return res.status(400).json({error:'Enter a delivery address'});
+  const idempotencyKey=String(req.header('Idempotency-Key')||'').trim();
+  if(idempotencyKey&&!/^[a-zA-Z0-9._:-]{8,64}$/.test(idempotencyKey))return res.status(400).json({error:'Invalid checkout key'});
+  const requestHash=createHash('sha256').update(JSON.stringify(d)).digest('hex');
+  const order=await inTransaction(async client=>{
+    const branch=await client.query('SELECT id,organization_id FROM branches WHERE id=$1 FOR UPDATE',[d.branchId]);
+    if(!branch.rowCount)throw Object.assign(new Error('Restaurant branch not found'),{status:404});
+    const organizationId=String(branch.rows[0].organization_id);
+    if(idempotencyKey){
+      const previous=await client.query('SELECT * FROM orders WHERE branch_id=$1 AND idempotency_key=$2',[d.branchId,idempotencyKey]);
+      if(previous.rowCount){
+        if(previous.rows[0].request_hash!==requestHash)throw Object.assign(new Error('This checkout key was already used for a different order'),{status:409});
+        return previous.rows[0];
+      }
+    }
+    const products=await client.query('SELECT id,name,price FROM products WHERE organization_id=$1 AND active=true AND id=ANY($2::uuid[])',[organizationId,d.items.map(item=>item.productId)]);
+    const productById=new Map(products.rows.map(row=>[String(row.id),row]));
+    if(d.items.some(item=>!productById.has(item.productId)))throw Object.assign(new Error('One or more menu items are no longer available'),{status:400});
+    let tableId:string|null=null;
+    if(d.orderType==='Dine-in'){
+      const table=await client.query("SELECT id,status FROM restaurant_tables WHERE branch_id=$1 AND organization_id=$2 AND table_number=$3 FOR UPDATE",[d.branchId,organizationId,d.tableNumber]);
+      if(!table.rowCount)throw Object.assign(new Error('This table QR code is not valid for the selected branch'),{status:404});
+      if(!['Available','Reserved','Occupied'].includes(String(table.rows[0].status)))throw Object.assign(new Error('This table is not accepting a new order right now'),{status:409});
+      tableId=String(table.rows[0].id);
+    }
+    const recipeRows=await client.query('SELECT r.product_id,r.ingredient_id,r.quantity,i.name AS ingredient_name,i.stock FROM recipes r JOIN ingredients i ON i.id=r.ingredient_id WHERE r.product_id=ANY($1::uuid[]) AND i.branch_id=$2 AND i.track_stock=true FOR UPDATE OF i',[d.items.map(item=>item.productId),d.branchId]);
+    const byProduct=new Map<string,typeof recipeRows.rows>();
+    for(const row of recipeRows.rows){const key=String(row.product_id);byProduct.set(key,[...(byProduct.get(key)||[]),row]);}
+    let subtotal=0;
+    const cooked=d.items.map(line=>{const product=productById.get(line.productId)!;const recipe=byProduct.get(line.productId)||[];subtotal+=Number(product.price)*line.quantity;return {line,recipe,product};});
+    const requirements=new Map<string,{name:string;qty:number;stock:number}>();
+    for(const {line,recipe} of cooked)for(const ingredient of recipe){const key=String(ingredient.ingredient_id);const previous=requirements.get(key);requirements.set(key,{name:ingredient.ingredient_name,qty:(previous?.qty||0)+Number(ingredient.quantity)*line.quantity,stock:Number(ingredient.stock)});}
+    for(const [,need] of requirements)if(need.qty>need.stock)throw Object.assign(new Error('Insufficient stock: '+need.name),{status:409});
+    subtotal=Number(subtotal.toFixed(2));
+    const tax=Number((subtotal*0.15).toFixed(2));
+    const total=Number((subtotal+tax).toFixed(2));
+    const numberResult=await client.query('SELECT COALESCE(MAX(order_number),1000)+1 AS next FROM orders WHERE branch_id=$1',[d.branchId]);
+    const notes=['QR order · '+d.phone,d.orderType==='Home Delivery'?'Delivery address: '+d.address:'',d.notes].filter(Boolean).join(' · ');
+    const created=await client.query("INSERT INTO orders(organization_id,branch_id,customer_id,table_id,order_number,order_type,subtotal,tax,discount,total,status,notes,channel,idempotency_key,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,0,$9,'Pending',$10,'qr',$11,$12) RETURNING *",[organizationId,d.branchId,null,tableId,numberResult.rows[0].next,d.orderType,subtotal,tax,total,notes,idempotencyKey||null,idempotencyKey?requestHash:null]);
+    const customer=await client.query('SELECT id FROM customers WHERE organization_id=$1 AND phone=$2 ORDER BY created_at LIMIT 1 FOR UPDATE',[organizationId,d.phone]);
+    let customerId:string;
+    if(customer.rowCount){
+      customerId=String(customer.rows[0].id);
+      await client.query("UPDATE customers SET name=$1,address=CASE WHEN $2<>'' THEN $2 ELSE address END WHERE id=$3 AND organization_id=$4",[d.customerName,d.address,customerId,organizationId]);
+    }else{
+      const inserted=await client.query('INSERT INTO customers(organization_id,name,phone,address) VALUES($1,$2,$3,$4) RETURNING id',[organizationId,d.customerName,d.phone,d.address]);
+      customerId=String(inserted.rows[0].id);
+    }
+    await client.query('UPDATE orders SET customer_id=$1 WHERE id=$2',[customerId,created.rows[0].id]);
+    if(d.orderType==='Home Delivery')await client.query("INSERT INTO deliveries(organization_id,branch_id,order_id,status,delivery_address,delivery_note) VALUES($1,$2,$3,'Pending',$4,$5) ON CONFLICT(order_id) DO NOTHING",[organizationId,d.branchId,created.rows[0].id,d.address,d.notes]);
+    if(tableId)await client.query("UPDATE restaurant_tables SET status='Occupied',updated_at=now() WHERE id=$1 AND branch_id=$2",[tableId,d.branchId]);
+    for(const {line,recipe,product} of cooked){
+      await client.query('INSERT INTO order_items(order_id,product_id,product_name,quantity,unit_price,line_total) VALUES($1,$2,$3,$4,$5,$6)',[created.rows[0].id,product.id,product.name,line.quantity,product.price,Number((Number(product.price)*line.quantity).toFixed(2))]);
+      for(const ingredient of recipe){
+        const used=Number(ingredient.quantity)*line.quantity;
+        await client.query('UPDATE ingredients SET stock=stock-$1,updated_at=now() WHERE id=$2 AND branch_id=$3 AND track_stock=true',[used,ingredient.ingredient_id,d.branchId]);
+        await client.query("INSERT INTO stock_movements(branch_id,ingredient_id,movement_type,quantity_delta,reference_id,note,created_by) VALUES($1,$2,'sale',$3,$4,$5,NULL)",[d.branchId,ingredient.ingredient_id,-used,created.rows[0].id,'QR order #'+numberResult.rows[0].next]);
+      }
+    }
+    return created.rows[0];
+  });
+  res.status(201).json({order:{id:order.id,order_number:order.order_number,status:order.status,order_type:order.order_type,subtotal:Number(order.subtotal),tax:Number(order.tax),total:Number(order.total),channel:'qr',paymentDue:Number(order.total)}});
+}));
+
 app.get('/api/menu/qr',publicMenuLimiter,asyncRoute(async(req,res)=>{
   const parsed=menuQuery.safeParse({branchId:String(req.query.branchId||'')});
   if(!parsed.success)return res.status(400).json({error:'A valid branchId is required'});
   const branch=await pool.query('SELECT id,code FROM branches WHERE id=$1',[parsed.data.branchId]);
   if(!branch.rowCount)return res.status(404).json({error:'Branch not found'});
-  const base=(process.env.PUBLIC_MENU_BASE_URL||`${req.protocol}://${req.get('host')}/menu`).replace(/\/$/,'');
+  const configuredBase=String(req.query.baseUrl||process.env.PUBLIC_MENU_BASE_URL||`${req.protocol}://${req.get('host')}/menu`).trim();
+  let parsedBase:URL;
+  try{parsedBase=new URL(configuredBase);}catch{return res.status(400).json({error:'A valid public menu base URL is required'});}
+  if(!['http:','https:'].includes(parsedBase.protocol)||parsedBase.username||parsedBase.password||parsedBase.search||parsedBase.hash)return res.status(400).json({error:'Invalid public menu base URL'});
+  const base=parsedBase.toString().replace(/\/$/,'');
   const params=new URLSearchParams({branch:branch.rows[0].id});
   const table=String(req.query.table||'').trim().slice(0,24);
   if(table)params.set('table',table);
@@ -292,9 +378,9 @@ app.patch('/api/settings',authenticate,allow('owner','manager'),asyncRoute(async
 }));
 app.get('/api/orders',authenticate,allow('owner','manager','cashier','kitchen','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{
   const limit=Math.min(Math.max(Number(req.query.limit)||100,1),250);
-  const rows=await pool.query(`SELECT o.id,o.order_number,o.order_type,o.status,o.subtotal,o.tax,o.discount,o.total,o.notes,o.created_at,
+  const rows=await pool.query(`SELECT o.id,o.order_number,o.order_type,o.status,o.channel,o.subtotal,o.tax,o.discount,o.total,o.notes,o.created_at,
     t.table_number,
-    COALESCE(c.name,'Walk-in Guest') AS customer_name,
+    COALESCE(c.name,'Walk-in Guest') AS customer_name,c.phone AS customer_phone,c.address AS customer_address,
     GREATEST(0,COALESCE((SELECT SUM(CASE WHEN p.direction='in' THEN p.amount ELSE -p.amount END) FROM payments p WHERE p.order_id=o.id),0)) AS paid,
     COALESCE((SELECT p.method FROM payments p WHERE p.order_id=o.id AND p.direction='in' ORDER BY p.created_at DESC LIMIT 1),'Cash') AS payment_method,
     COALESCE((SELECT json_agg(json_build_object('method',p.method,'amount',p.amount) ORDER BY p.method,p.created_at,p.id) FROM payments p WHERE p.order_id=o.id AND p.direction='in'),'[]'::json) AS payment_breakdown,
@@ -305,6 +391,24 @@ app.get('/api/orders',authenticate,allow('owner','manager','cashier','kitchen','
     ORDER BY o.created_at DESC LIMIT $2`,[req.user!.branchId,limit]);
   res.json({orders:rows.rows});
 }));
+
+app.post('/api/orders/:id/payments',authenticate,allow('owner','manager','cashier'),asyncRoute(async(req:AuthedRequest,res)=>{
+  const parsed=schema.payment.safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Enter a valid Cash or Mada payment'});
+  const payment=await inTransaction(async client=>{
+    const order=await client.query('SELECT id,order_number,total,status FROM orders WHERE id=$1 AND branch_id=$2 AND organization_id=$3 FOR UPDATE',[String(req.params.id),req.user!.branchId,req.user!.organizationId]);
+    if(!order.rowCount)throw Object.assign(new Error('Order not found in this branch'),{status:404});
+    if(order.rows[0].status==='Cancelled')throw Object.assign(new Error('A cancelled order cannot receive payment'),{status:409});
+    const balance=await client.query("SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS paid FROM payments WHERE order_id=$1",[String(req.params.id)]);
+    const due=Number(order.rows[0].total)-Number(balance.rows[0].paid);
+    if(parsed.data.amount>due+0.005)throw Object.assign(new Error('Payment exceeds the remaining order balance'),{status:400});
+    const inserted=await client.query("INSERT INTO payments(organization_id,branch_id,order_id,amount,method,direction,note,created_by) VALUES($1,$2,$3,$4,$5,'in',$6,$7) RETURNING id,amount,method,created_at",[req.user!.organizationId,req.user!.branchId,String(req.params.id),parsed.data.amount,parsed.data.method,parsed.data.note||'Order balance collected',req.user!.id]);
+    await audit(client,req.user!,'order.payment_collected','order',String(req.params.id),{orderNumber:order.rows[0].order_number,amount:parsed.data.amount,method:parsed.data.method});
+    return {payment:inserted.rows[0],paid:Number(balance.rows[0].paid)+parsed.data.amount,due:Math.max(0,due-parsed.data.amount)};
+  });
+  res.status(201).json(payment);
+}));
+
 app.patch('/api/orders/:id/status',authenticate,allow('owner','manager','cashier','kitchen'),asyncRoute(async(req:AuthedRequest,res)=>{
   const parsed=z.object({status:z.enum(['Pending','Accepted','Preparing','Ready','Completed','Cancelled'])}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({error:'Invalid order status'});
