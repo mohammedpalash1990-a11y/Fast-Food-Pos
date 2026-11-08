@@ -21,6 +21,12 @@ img { display: block; max-width: 100%; }
 .qty-btn:hover { background:rgba(231,185,67,.18); color:#f2d074; }
 .custom-scrollbar::-webkit-scrollbar { width:5px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { border-radius:9px; background:rgba(255,255,255,.12); }
+.table-scroll { overflow-x:auto; scrollbar-width:thin; scrollbar-color:rgba(231,185,67,.35) transparent; }
+.table-scroll::-webkit-scrollbar { height:6px; }
+.table-scroll::-webkit-scrollbar-thumb { border-radius:9px; background:rgba(231,185,67,.3); }
+.table-scroll::-webkit-scrollbar-track { background:rgba(255,255,255,.04); border-radius:9px; }
 .theme-light { background:#f4f1e9!important; color:#1e2428!important; }
-.theme-light header { background:rgba(255,255,255,.92)!important; }
+.theme-light header { background:rgba(17,21,25,.94)!important; border-bottom-color:rgba(23,28,34,.14)!important; }
+.theme-light footer { color:#6b7780!important; border-top-color:rgba(23,28,34,.12)!important; }
+.theme-light .custom-scrollbar::-webkit-scrollbar-thumb { background:rgba(23,28,34,.22); }
 @media print { body { background:#fff!important; color:#111!important; } aside, header, footer, button { display:none!important; } main { padding:0!important; } }
