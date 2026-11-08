@@ -59,6 +59,9 @@ function App() {
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [payMethod, setPayMethod] = useState<PaymentMethod>('Cash');
+  const [splitPayment, setSplitPayment] = useState(false);
+  const [cashPaymentAmount, setCashPaymentAmount] = useState('10');
+  const [kitchenAcceptanceRequired, setKitchenAcceptanceRequired] = useState<boolean>(() => safeRead('musafir-kitchen-acceptance-required', false));
   const [discount, setDiscount] = useState('0');
   const [note, setNote] = useState('');
   const [toast, setToast] = useState('');
@@ -312,6 +315,9 @@ function App() {
   const discountAmount = (subtotal + tax) * Math.max(0, Math.min(100, Number(discount) || 0)) / 100;
   const total = Math.max(0, subtotal + tax - discountAmount);
   const paid = total;
+  const splitCashAmount = Number(cashPaymentAmount);
+  const splitMadaAmount = Math.max(0, total - splitCashAmount);
+  useEffect(() => { save('musafir-kitchen-acceptance-required', kitchenAcceptanceRequired); }, [kitchenAcceptanceRequired]);
   const filteredProducts = useMemo(() => products.filter(p => (category === 'All' || p.category === category) && p.name.toLowerCase().includes(search.toLowerCase())), [products, category, search]);
   const lowStock = inventory.filter(item => item.trackStock && item.stock <= item.reorderLevel);
   const todayOrders = orders.filter(order => new Date(order.createdAt).toDateString() === new Date().toDateString() && order.number !== 'HOLD');
@@ -331,12 +337,14 @@ function App() {
   const addToCart = (product: Product) => {
     setCart(current => { const exists = current.find(item => item.productId === product.id); return exists ? current.map(item => item.productId === product.id ? { ...item, qty: item.qty + 1 } : item) : [...current, { id: `${product.id}-${Date.now()}`, productId: product.id, name: product.name, price: product.price, qty: 1 }]; });
   };
-  const clearCart = () => { orderIdempotencyKey.current = ''; orderIdempotencyPayload.current = ''; saveSession('musafir-order-idempotency-key',''); saveSession('musafir-order-idempotency-payload',''); setCart([]); setDiscount('0'); setNote(''); setSelectedCustomerId(''); setSelectedTableId(''); };
+  const clearCart = () => { orderIdempotencyKey.current = ''; orderIdempotencyPayload.current = ''; saveSession('musafir-order-idempotency-key',''); saveSession('musafir-order-idempotency-payload',''); setCart([]); setDiscount('0'); setNote(''); setSelectedCustomerId(''); setSelectedTableId(''); setSplitPayment(false); setCashPaymentAmount('10'); };
   const placeOrder = async () => {
     if (orderSubmissionLock.current) return;
     if (!cart.length) { flash('Add at least one menu item first.'); return; }
     if (orderType==='Dine-in' && apiConnected && (!selectedTableId || !restaurantTables.some(table=>table.id===selectedTableId&&['Available','Reserved'].includes(table.status)))) { flash('Select an available restaurant table for this dine-in order.'); return; }
-    const orderPayload = { orderType, tableId: orderType==='Dine-in' ? selectedTableId || null : null, customerId: selectedCustomerId || null, paymentMethod: payMethod, discount: discountAmount, taxRate: 0.15, notes: note, items: cart.map(item => ({ productId: item.productId, quantity: item.qty })) };
+    if (splitPayment && (!Number.isFinite(splitCashAmount) || splitCashAmount <= 0 || splitCashAmount >= total)) { flash('For split payment, enter a Cash amount greater than zero and less than the order total.'); return; }
+    const paymentBreakdown = splitPayment ? [{ method: 'Cash' as PaymentMethod, amount: Number(splitCashAmount.toFixed(2)) }, { method: 'Mada' as PaymentMethod, amount: Number(splitMadaAmount.toFixed(2)) }] : [{ method: payMethod, amount: Number(total.toFixed(2)) }];
+    const orderPayload = { orderType, tableId: orderType==='Dine-in' ? selectedTableId || null : null, customerId: selectedCustomerId || null, paymentMethod: splitPayment ? 'Mada' as PaymentMethod : payMethod, payments: paymentBreakdown, discount: discountAmount, taxRate: 0.15, notes: note, items: cart.map(item => ({ productId: item.productId, quantity: item.qty })) };
     const payloadFingerprint = JSON.stringify(orderPayload);
     if (orderIdempotencyPayload.current !== payloadFingerprint) { orderIdempotencyKey.current = ''; orderIdempotencyPayload.current = payloadFingerprint; saveSession('musafir-order-idempotency-payload',payloadFingerprint); }
     orderSubmissionLock.current = true;
@@ -366,8 +374,9 @@ function App() {
           tax: Number(saved.tax),
           discount: Number(saved.discount),
           total: serverTotal,
-          paid: serverTotal,
-          paymentMethod: payMethod,
+          paid: paymentBreakdown.reduce((sum, payment) => sum + payment.amount, 0),
+          paymentMethod: paymentBreakdown[paymentBreakdown.length - 1].method,
+          paymentBreakdown,
           kitchenNote: note || undefined
         };
         setOrders(current => [order, ...current]);
@@ -396,7 +405,7 @@ function App() {
       return;
     }
     const number = nextNumber();
-    const order: Order = { id: `o-${number}`, number, type: orderType, status: 'Pending', createdAt: new Date().toISOString(), customerName: customers.find(customer => customer.id === selectedCustomerId)?.name || 'Walk-in Guest', tableNumber: restaurantTables.find(table=>table.id===selectedTableId)?.tableNumber, items: cart.map(item => ({ id: item.id, productId: item.productId, name: item.name, qty: item.qty, unitPrice: item.price, note: note || undefined })), subtotal, tax, discount: discountAmount, total, paid: total, paymentMethod: payMethod, kitchenNote: note || undefined };
+    const order: Order = { id: `o-${number}`, number, type: orderType, status: kitchenAcceptanceRequired ? 'Pending' : 'Completed', createdAt: new Date().toISOString(), customerName: customers.find(customer => customer.id === selectedCustomerId)?.name || 'Walk-in Guest', tableNumber: restaurantTables.find(table=>table.id===selectedTableId)?.tableNumber, items: cart.map(item => ({ id: item.id, productId: item.productId, name: item.name, qty: item.qty, unitPrice: item.price, note: note || undefined })), subtotal, tax, discount: discountAmount, total, paid: total, paymentMethod: paymentBreakdown[paymentBreakdown.length - 1].method, paymentBreakdown, kitchenNote: note || undefined };
     setInventory(current => current.map(item => {
       const amount = deductions.get(item.name.trim().toLowerCase()) || 0;
       return amount && item.trackStock ? { ...item, stock: item.stock - amount } : item;
@@ -431,7 +440,7 @@ function App() {
       const branchId = login.user?.branchId;
       if (!login.token || !branchId) throw new Error('Login response did not include a branch session.');
       const authHeaders = { Authorization: `Bearer ${login.token}` };
-      const [menuResponse, categoryResponse, productsResponse, ordersResponse, inventoryResponse, suppliersResponse, purchasesResponse, customersResponse] = await Promise.all([
+      const [menuResponse, categoryResponse, productsResponse, ordersResponse, inventoryResponse, suppliersResponse, purchasesResponse, customersResponse, settingsResponse] = await Promise.all([
         fetch(`${base}/api/menu?branchId=${encodeURIComponent(branchId)}`),
         fetch(`${base}/api/categories`, { headers: authHeaders }),
         fetch(`${base}/api/products`, { headers: authHeaders }),
@@ -439,9 +448,10 @@ function App() {
         fetch(`${base}/api/inventory`, { headers: authHeaders }),
         fetch(`${base}/api/suppliers`, { headers: authHeaders }),
         fetch(`${base}/api/purchases`, { headers: authHeaders }),
-        fetch(`${base}/api/customers`, { headers: authHeaders })
+        fetch(`${base}/api/customers`, { headers: authHeaders }),
+        fetch(`${base}/api/settings`, { headers: authHeaders })
       ]);
-      const [menu, categoryData, productData, orderData, inventoryData, supplierData, purchaseData, customerData] = await Promise.all([menuResponse.json(), categoryResponse.json(), productsResponse.json(), ordersResponse.json(), inventoryResponse.json(), suppliersResponse.json(), purchasesResponse.json(), customersResponse.json()]);
+      const [menu, categoryData, productData, orderData, inventoryData, supplierData, purchaseData, customerData, settingsData] = await Promise.all([menuResponse.json(), categoryResponse.json(), productsResponse.json(), ordersResponse.json(), inventoryResponse.json(), suppliersResponse.json(), purchasesResponse.json(), customersResponse.json(), settingsResponse.json()]);
       if (!menuResponse.ok || !Array.isArray(menu.products)) throw new Error(menu.error || 'Could not load the branch menu.');
       if (!categoryResponse.ok || !Array.isArray(categoryData.categories)) throw new Error(categoryData.error || 'Could not load menu categories.');
       if (!productsResponse.ok || !Array.isArray(productData.products)) throw new Error(productData.error || 'Could not load product management data.');
@@ -450,11 +460,13 @@ function App() {
       if (!suppliersResponse.ok || !Array.isArray(supplierData.suppliers)) throw new Error(supplierData.error || 'Could not load branch suppliers.');
       if (!purchasesResponse.ok || !Array.isArray(purchaseData.purchases)) throw new Error(purchaseData.error || 'Could not load branch purchase history.');
       if (!customersResponse.ok || !Array.isArray(customerData.customers)) throw new Error(customerData.error || 'Could not load customer records.');
+      if (!settingsResponse.ok || typeof settingsData.settings?.kitchenAcceptanceRequired !== 'boolean') throw new Error(settingsData.error || 'Could not load branch workflow settings.');
+      setKitchenAcceptanceRequired(settingsData.settings.kitchenAcceptanceRequired);
       setInventory(inventoryData.items.map((item: {id:string;name:string;category?:string;unit:string;stock:string|number;trackStock?:boolean;reorderLevel:string|number;unitCost:string|number;supplier?:string;expiresOn?:string|null})=>({id:item.id,name:item.name,category:item.category||'General',unit:item.unit,stock:Number(item.stock),trackStock:Boolean(item.trackStock),reorderLevel:Number(item.reorderLevel),cost:Number(item.unitCost),supplier:item.supplier||'—',expiry:item.expiresOn||''})));
       setSuppliers(supplierData.suppliers.map((supplier: {id:string;name:string;phone?:string;category?:string;payable:string|number})=>({id:supplier.id,name:supplier.name,phone:supplier.phone||'',category:supplier.category||'General',due:Number(supplier.payable)})));
       setCustomers(customerData.customers.map((customer: {id:string;name:string;phone?:string;address?:string;loyaltyPoints?:number|string;orderCount?:number|string;lifetimeSpend?:number|string;lastOrderAt?:string|null})=>({id:customer.id,name:customer.name,phone:customer.phone||'',address:customer.address||'',loyaltyPoints:Number(customer.loyaltyPoints||0),orderCount:Number(customer.orderCount||0),lifetimeSpend:Number(customer.lifetimeSpend||0),lastOrderAt:customer.lastOrderAt||undefined,favoriteItems:[]})));
       setPurchases(purchaseData.purchases.filter((purchase: {ingredient_id?:string;item_name?:string})=>purchase.ingredient_id && purchase.item_name).map((purchase: {id:string;created_at:string;supplier_id:string;supplier_name:string;ingredient_id:string;item_name:string;unit:string;quantity:string|number;unit_cost:string|number;total:string|number;paid:string|number;payment_method:string})=>({id:purchase.id,date:purchase.created_at.slice(0,10),supplierId:purchase.supplier_id,supplierName:purchase.supplier_name,inventoryId:purchase.ingredient_id,itemName:purchase.item_name,quantity:Number(purchase.quantity),unit:purchase.unit,unitCost:Number(purchase.unit_cost),total:Number(purchase.total),paid:Number(purchase.paid),paymentStatus:Number(purchase.paid)>=Number(purchase.total)?'Paid':Number(purchase.paid)>0?'Part-paid':'Credit',paymentMethod:purchase.payment_method as PaymentMethod,createdAt:purchase.created_at})));
-      setOrders(orderData.orders.map((saved: { id:string; order_number:number|string; order_type:Order['type']; status:string; created_at:string; customer_name:string; subtotal:string|number; tax:string|number; discount:string|number; total:string|number; paid:string|number; payment_method:string; notes?:string; items:Array<{id:string;productId:string|null;name:string;qty:number;unitPrice:string|number}> }) => ({
+      setOrders(orderData.orders.map((saved: { id:string; order_number:number|string; order_type:Order['type']; status:string; created_at:string; customer_name:string; subtotal:string|number; tax:string|number; discount:string|number; total:string|number; paid:string|number; payment_method:string; payment_breakdown?:Array<{method:PaymentMethod;amount:string|number}>; notes?:string; items:Array<{id:string;productId:string|null;name:string;qty:number;unitPrice:string|number}> }) => ({
         id: saved.id,
         number: String(saved.order_number),
         type: saved.order_type,
@@ -467,6 +479,7 @@ function App() {
         total: Number(saved.total),
         paid: Number(saved.paid),
         paymentMethod: saved.payment_method === 'Mada' ? 'Mada' : 'Cash',
+        paymentBreakdown: (saved.payment_breakdown || []).map(payment => ({method:payment.method === 'Mada' ? 'Mada' : 'Cash',amount:Number(payment.amount)})),
         kitchenNote: saved.notes || undefined,
         items: saved.items.map(item => ({ id:item.id, productId:item.productId || '', name:item.name, qty:Number(item.qty), unitPrice:Number(item.unitPrice) }))
       })));
