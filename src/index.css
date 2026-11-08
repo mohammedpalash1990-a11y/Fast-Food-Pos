@@ -217,3 +217,15 @@ img { display: block; max-width: 100%; }
   background: var(--theme-surface) !important;
   color: var(--theme-text) !important;
 }
+
+
+/* Customer QR order confirmation: receipt-only print layout. */
+@media print {
+  body { background: #fff !important; }
+  .qr-order-confirmation { display: block !important; min-height: 0 !important; max-width: 100% !important; padding: 0 !important; }
+  .qr-order-confirmation > div { border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+  .qr-order-confirmation > div > div:first-child { background: #102b25 !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .qr-order-confirmation > div > div:last-child { padding: 24px !important; }
+  .qr-order-confirmation button { display: none !important; }
+  .qr-order-confirmation p { break-inside: avoid; }
+}
