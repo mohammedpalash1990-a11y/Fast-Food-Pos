@@ -98,12 +98,12 @@ function readAllState() {
       }
     : {
         restaurantName: 'Musafir Fast Food',
-        branchName: 'Dhaka Main Branch',
-        branchCode: 'DHK-01',
-        phone: '+880 1711-009988',
-        address: 'House 24, Road 11, Banani, Dhaka 1213',
-        currency: '৳',
-        taxRate: 5,
+        branchName: 'Main Branch',
+        branchCode: 'KSA-01',
+        phone: '+966 50 000 0000',
+        address: 'King Fahd Road, Riyadh',
+        currency: 'SAR',
+        taxRate: 15,
         receiptFooter: 'Thank you for dining with Musafir Fast Food!',
         publicMenuUrl: 'https://musafir-pos.local/menu'
       };
@@ -406,7 +406,10 @@ app.get('/api/bootstrap', (_req, res) => {
   res.json(readAllState());
 });
 
-app.get('/api/settings', (_req, res) => {
+app.get('/api/settings', requireAuth, (req: AuthedRequest, res) => {
+  if (!req.user || req.user.role !== 'owner') {
+    return res.status(403).json({ error: 'Only owners can view restaurant and branch settings' });
+  }
   const state = readAllState();
   res.json({ settings: state.settings });
 });
@@ -811,7 +814,7 @@ app.get('/api/menu/qr', async (req, res) => {
   try {
     const state = readAllState();
     const table = String(req.query.table || 'T-01');
-    const branch = String(req.query.branch || state.settings.branchCode || 'DHK-01');
+    const branch = String(req.query.branch || state.settings.branchCode || 'KSA-01');
     const requestOrigin = `${req.protocol}://${req.get('host')}`;
     const configured = String(req.query.baseUrl || state.settings.publicMenuUrl || '').replace(/\/$/, '');
     const base = configured && !configured.includes('musafir-pos.local') ? configured : `${requestOrigin}/menu`;

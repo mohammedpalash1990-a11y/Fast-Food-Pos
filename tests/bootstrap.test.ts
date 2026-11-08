@@ -222,12 +222,19 @@ describe('Production Owner API authentication, JWT safety, and branch operations
     assert.equal(body.settings.taxRate, 15);
     assert.equal(body.settings.currency, 'SAR');
 
-    // Verify GET /api/settings
-    const getRes = await fetch(`${API}/api/settings`);
+    // Verify GET /api/settings as owner
+    const getRes = await fetch(`${API}/api/settings`, {
+      headers: { Authorization: `Bearer ${ownerToken}` }
+    });
     assert.equal(getRes.status, 200);
     const getBody = (await getRes.json()) as { settings: Record<string, unknown> };
     assert.equal(getBody.settings.branchCode, 'RUH-01');
     assert.equal(getBody.settings.restaurantName, 'Musafir Prime Dining');
+  });
+
+  test('unauthenticated users cannot view GET /api/settings', async () => {
+    const res = await fetch(`${API}/api/settings`);
+    assert.equal(res.status, 401);
   });
 
   test('owner can create a new staff account via POST /api/users', async () => {
@@ -249,6 +256,25 @@ describe('Production Owner API authentication, JWT safety, and branch operations
     const body = (await res.json()) as { user: { email: string; role: string } };
     assert.equal(body.user.email, 'tariq.branch@example.com');
     assert.equal(body.user.role, 'manager');
+  });
+
+  test('non-owner roles cannot view GET /api/settings', async () => {
+    // Login as manager created in previous test
+    const loginRes = await fetch(`${API}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'tariq.branch@example.com',
+        password: 'ManagerPassword123!'
+      })
+    });
+    assert.equal(loginRes.status, 200);
+    const { token: managerToken } = (await loginRes.json()) as { token: string };
+
+    const res = await fetch(`${API}/api/settings`, {
+      headers: { Authorization: `Bearer ${managerToken}` }
+    });
+    assert.equal(res.status, 403);
   });
 
   test('non-owner cannot modify organization/branch settings', async () => {
