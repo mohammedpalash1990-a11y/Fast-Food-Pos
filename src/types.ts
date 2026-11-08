@@ -70,6 +70,9 @@ export interface Order {
   paid: number;
   paymentMethod: PaymentMethod;
   paymentBreakdown?: OrderPayment[];
+  channel?: 'pos' | 'qr';
+  customerPhone?: string;
+  deliveryAddress?: string;
   kitchenNote?: string;
   tableNumber?: string;
 }
