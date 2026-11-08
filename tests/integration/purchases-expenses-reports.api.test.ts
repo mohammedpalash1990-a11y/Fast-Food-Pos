@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
 
-const API = (process.env.API_URL || 'http://localhost:3001').replace(/\\/$/, '');
+const API = (process.env.API_URL || 'http://localhost:3001').replace(/\/$/, '');
 const db = new Pool({ connectionString: process.env.DATABASE_URL, max: 4 });
 const suffix = randomUUID().slice(0, 8);
 const ids: Record<string, string> = {};
