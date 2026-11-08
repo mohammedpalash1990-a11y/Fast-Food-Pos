@@ -1737,7 +1737,7 @@ function App() {
       flash(`Coupon ${coupon.code} ${result.coupon.active?'enabled':'disabled'}.`);
     }catch(error){flash(error instanceof Error?error.message:'Coupon update failed.');}
   };
-  useEffect(()=>{if(apiConnected&&view==='discounts')void refreshCoupons();},[apiConnected,apiToken,apiBase,view]);
+  useEffect(()=>{if(apiConnected&&view==='discounts'&&['owner','manager'].includes(apiRole))void refreshCoupons();},[apiConnected,apiToken,apiBase,apiRole,view]);
   const discountsView = (): ReactNode => <section className={`${panel} p-5`}>
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Sales promotions','Discounts & Coupons','Create branch-scoped promo codes with date, minimum-spend and usage limits.')}{<button onClick={()=>void createCoupon()} disabled={!apiConnected||!['owner','manager'].includes(apiRole)} className="rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b] disabled:opacity-40"><Plus size={14} className="mr-1 inline"/>Create coupon</button>}</div>
     {!apiConnected&&<p className="mb-4 rounded-xl border border-amber-300/15 bg-amber-300/[.04] p-3 text-xs text-amber-100/80">Connect the live POS backend to manage coupons. Coupon codes are not stored in offline demo mode.</p>}
