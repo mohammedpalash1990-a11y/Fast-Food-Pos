@@ -345,6 +345,16 @@ function App() {
   const paid = total;
   const splitCashAmount = Number((Number(cashPaymentAmount) || 0).toFixed(2));
   const splitMadaAmount = Number(Math.max(0, total - splitCashAmount).toFixed(2));
+  const appliedCouponCode = appliedCoupon?.code || '';
+  useEffect(() => {
+    if(!appliedCouponCode||!apiConnected||!apiToken||subtotal<=0)return;
+    let active=true;
+    fetch(`${apiBase.replace(/\\/$/,'')}/api/coupons/validate`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({code:appliedCouponCode,subtotal})})
+      .then(async response=>{const result=await response.json();if(!response.ok||!result.coupon)throw new Error(result.error||'Coupon is no longer valid.');return result;})
+      .then(result=>{if(active)setAppliedCoupon(current=>current?.code===appliedCouponCode?{...current,discount:Number(result.discount)}:current);})
+      .catch(error=>{if(active){setAppliedCoupon(null);setCouponInput('');setToast(error instanceof Error?error.message:'Coupon could not be refreshed.');}});
+    return ()=>{active=false;};
+  },[appliedCouponCode,subtotal,apiConnected,apiToken,apiBase]);
   useEffect(() => { save('musafir-kitchen-acceptance-required', kitchenAcceptanceRequired); }, [kitchenAcceptanceRequired]);
   const filteredProducts = useMemo(() => products.filter(p => (category === 'All' || p.category === category) && p.name.toLowerCase().includes(search.toLowerCase())), [products, category, search]);
   const lowStock = inventory.filter(item => item.trackStock && item.stock <= item.reorderLevel);
