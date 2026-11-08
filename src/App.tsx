@@ -381,7 +381,7 @@ function App() {
           kitchenNote: note || undefined
         };
         setOrders(current => [order, ...current]);
-        setLogs(current => [{ id: `log-${Date.now()}`, title: 'Server sale completed', detail: `Order #${order.number} · ${currency(serverTotal)} · ${payMethod}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
+        setLogs(current => [{ id: `log-${Date.now()}`, title: 'Server sale completed', detail: `Order #${order.number} · ${currency(serverTotal)} · ${paymentBreakdown.map(payment=>`${payment.method} ${currency(payment.amount)}`).join(' + ')}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
         clearCart(); setView('orders'); flash(`Order #${order.number} saved to the database.`);
       } catch (error) {
         flash(error instanceof Error ? error.message : 'Backend connection failed. Order was not submitted.');
@@ -419,7 +419,7 @@ function App() {
     setOrders(current => [order, ...current]);
     if(selectedTableId)setRestaurantTables(current=>current.map(table=>table.id===selectedTableId?{...table,status:'Occupied' as TableRecord['status']}:table));
     setLogs(current => [
-      { id: `log-${Date.now()}`, title: 'Sale completed', detail: `Order #${number} · ${currency(total)} · ${payMethod}`, time },
+      { id: `log-${Date.now()}`, title: 'Sale completed', detail: `Order #${number} · ${currency(total)} · ${paymentBreakdown.map(payment=>`${payment.method} ${currency(payment.amount)}`).join(' + ')}`, time },
       ...stockLogs,
       ...current
     ]);
