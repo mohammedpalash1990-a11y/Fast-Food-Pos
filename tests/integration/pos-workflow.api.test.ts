@@ -213,6 +213,7 @@ test('dine-in table rules, invalid payment methods, insufficient stock and idemp
 });
 
 test('branch-scoped coupons validate, discount checkout totals and enforce expiry and usage limits', async () => {
+  await db.query('UPDATE ingredients SET stock=100 WHERE id=$1', [ids.ingredient]);
   const code = ('SAVE' + suffix).toUpperCase();
   const created = await call('POST', '/api/coupons', {
     code,
