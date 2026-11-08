@@ -282,7 +282,7 @@ function App() {
         }
         const liveOrders: Order[] = orderData.orders.map((saved: {
           id: string; order_number: number | string; order_type: Order['type']; status: string;
-          created_at: string; customer_name: string; table_number?: string | null; subtotal: string | number; tax: string | number;
+          created_at: string; customer_name: string; customer_phone?: string | null; customer_address?: string | null; channel?: string; table_number?: string | null; subtotal: string | number; tax: string | number;
           discount: string | number; total: string | number; paid: string | number;
           payment_method: string; payment_breakdown?: Array<{method:PaymentMethod;amount:string|number}>; notes?: string;
           items: Array<{ id: string; productId: string | null; name: string; qty: number; unitPrice: string | number }>;
@@ -293,6 +293,9 @@ function App() {
           status: saved.status as OrderStatus,
           createdAt: saved.created_at,
           customerName: saved.customer_name,
+          customerPhone: saved.customer_phone || undefined,
+          deliveryAddress: saved.customer_address || undefined,
+          channel: saved.channel === 'qr' ? 'qr' : 'pos',
           tableNumber: saved.table_number || undefined,
           subtotal: Number(saved.subtotal),
           tax: Number(saved.tax),
@@ -472,7 +475,7 @@ function App() {
           kitchenNote: note || undefined
         };
         setOrders(current => [order, ...current]);
-        setLogs(current => [{ id: `log-${Date.now()}`, title: 'Server sale completed', detail: `Order #${order.number} · ${currency(serverTotal)} · ${paymentBreakdown.map(payment=>`${payment.method} ${currency(payment.amount)}`).join(' + ')}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
+        setLogs(current => [{ id: `log-${Date.now()}`, title: 'Server sale completed', detail: `Order #{order.number} · ${currency(serverTotal)} · ${paymentBreakdown.map(payment=>`${payment.method} ${currency(payment.amount)}`).join(' + ')}`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...current]);
         clearCart(); setView('orders'); flash(`Order #${order.number} saved to the database.`);
       } catch (error) {
         flash(error instanceof Error ? error.message : 'Backend connection failed. Order was not submitted.');
@@ -713,6 +716,30 @@ function App() {
     setOrders(current => [order, ...current]); clearCart(); setView('orders'); flash('Order held. Resume it from the Orders list.');
   };
   const resumeOrder = (order: Order) => { setCart(order.items.map(item => ({ id: item.id, productId: item.productId, name: item.name, price: item.unitPrice, qty: item.qty }))); setOrderType(order.type); setOrders(current => current.filter(entry => entry.id !== order.id)); setView('pos'); flash('Held order restored to the cart.'); };
+  const collectQrOrderPayment = async (order: Order, method: PaymentMethod) => {
+    const amount = Number(Math.max(0, order.total - order.paid).toFixed(2));
+    if (amount <= 0) { flash('This order is already paid.'); return; }
+    if (!apiToken || !apiConnected) { flash('Connect the POS database before collecting QR order payments.'); return; }
+    try {
+      const response = await fetch(\`${apiBase.replace(/\/$/, '')}\` + '/api/orders/' + encodeURIComponent(order.id) + '/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: \`Bearer ${apiToken}\` },
+        body: JSON.stringify({ amount, method, note: 'QR order balance collected at POS' })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Payment could not be recorded.');
+      setOrders(current => current.map(item => item.id === order.id ? {
+        ...item,
+        paid: Number(result.paid),
+        paymentMethod: method,
+        paymentBreakdown: [...(item.paymentBreakdown || []), { method, amount }]
+      } : item));
+      flash(\`Collected ${currency(amount)} by ${method}.\`);
+    } catch (error) {
+      flash(error instanceof Error ? error.message : 'Could not collect QR order payment.');
+    }
+  };
+
   const changeStatus = async (id: string) => {
     const currentOrder = orders.find(order => order.id === id);
     if (!currentOrder) return;
@@ -838,7 +865,7 @@ function App() {
         <button onClick={()=>setOrderPanelTab('live')} className={`rounded-lg px-2 py-2 text-xs font-semibold transition ${orderPanelTab==='live'?'bg-[#145044] text-white shadow-sm':'text-[#58665f] hover:bg-white/70'}`}><span className="inline-flex items-center gap-1.5"><Activity size={14}/> Live Orders</span></button>
         <button onClick={()=>setOrderPanelTab('qr')} className={`rounded-lg px-2 py-2 text-xs font-semibold transition ${orderPanelTab==='qr'?'bg-[#145044] text-white shadow-sm':'text-[#58665f] hover:bg-white/70'}`}><span className="inline-flex items-center gap-1.5"><Grid2X2 size={14}/> QR Orders</span></button>
       </div>
-      {orderPanelTab==='live'?<div className="custom-scrollbar flex-1 space-y-2 overflow-y-auto">{orders.filter(order=>order.number!=='HOLD').slice(0,8).map(order=><article key={order.id} className="rounded-xl border border-[#e2ddcf] bg-white p-3 shadow-sm"><div className="flex items-center justify-between gap-2"><strong className="text-sm text-[#18382f]">#${order.number}</strong><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${order.status==='Completed'?'bg-[#e1f4e5] text-[#237342]':order.status==='Ready'?'bg-[#e4efff] text-[#315f9b]':'bg-[#fff0c9] text-[#8a6410]'}`}>{order.status}</span></div><div className="mt-1 text-[11px] text-[#78837d]">{order.type}${order.tableNumber?` · Table ${order.tableNumber}`:''} · ${new Date(order.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div><div className="mt-2 flex items-center justify-between gap-2"><span className="min-w-0 truncate text-xs text-[#52625a]">{order.items.slice(0,2).map(item=>`${item.qty}× ${item.name}`).join(', ')}</span><strong className="shrink-0 text-xs text-[#145044]">{currency(order.total)}</strong></div><div className="mt-2 flex justify-end">{order.status!=='Completed'&&<button onClick={()=>changeStatus(order.id)} className="rounded-lg bg-[#145044] px-3 py-1.5 text-[11px] font-semibold text-white">Next status</button>}</div></article>)}{!orders.some(order=>order.number!=='HOLD')&&<p className="py-10 text-center text-sm text-[#78837d]">No live orders yet.</p>}</div>:<div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-[#d9d2c1] bg-[#fbf9f2] px-5 py-10 text-center"><div className="mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-[#e5efe7] text-[#145044]"><Grid2X2 size={22}/></div><h3 className="text-sm font-bold text-[#18382f]">QR Orders</h3><p className="mt-2 max-w-xs text-xs leading-5 text-[#78837d]">Customer orders placed from the QR menu will appear in this separate queue.</p><span className="mt-3 rounded-full bg-[#f2ead5] px-3 py-1 text-[10px] font-semibold text-[#8a6410]">QR order source connection pending</span></div>}
+      {orderPanelTab==='live'?<div className="custom-scrollbar flex-1 space-y-2 overflow-y-auto">{orders.filter(order=>order.number!=='HOLD'&&order.channel!=='qr').slice(0,8).map(order=><article key={order.id} className="rounded-xl border border-[#e2ddcf] bg-white p-3 shadow-sm"><div className="flex items-center justify-between gap-2"><strong className="text-sm text-[#18382f]">#${order.number}</strong><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${order.status==='Completed'?'bg-[#e1f4e5] text-[#237342]':order.status==='Ready'?'bg-[#e4efff] text-[#315f9b]':'bg-[#fff0c9] text-[#8a6410]'}`}>{order.status}</span></div><div className="mt-1 text-[11px] text-[#78837d]">{order.type}{order.tableNumber?` · Table ${order.tableNumber}`:''} · {new Date(order.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div><div className="mt-2 flex items-center justify-between gap-2"><span className="min-w-0 truncate text-xs text-[#52625a]">{order.items.slice(0,2).map(item=>`${item.qty}× ${item.name}`).join(', ')}</span><strong className="shrink-0 text-xs text-[#145044]">{currency(order.total)}</strong></div><div className="mt-2 flex justify-end">{order.status!=='Completed'&&<button onClick={()=>changeStatus(order.id)} className="rounded-lg bg-[#145044] px-3 py-1.5 text-[11px] font-semibold text-white">Next status</button>}</div></article>)}{!orders.some(order=>order.number!=='HOLD'&&order.channel!=='qr')&&<p className="py-10 text-center text-sm text-[#78837d]">No live orders yet.</p>}</div>:<div className="custom-scrollbar flex-1 space-y-2 overflow-y-auto">{orders.filter(order=>order.channel==='qr'&&order.number!=='HOLD').slice(0,8).map(order=>{const due=Math.max(0,order.total-order.paid);return <article key={order.id} className="rounded-xl border border-[#e2ddcf] bg-white p-3 shadow-sm"><div className="flex items-center justify-between gap-2"><strong className="text-sm text-[#18382f]">#{order.number}</strong><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${order.status==='Completed'?'bg-[#e1f4e5] text-[#237342]':'bg-[#fff0c9] text-[#8a6410]'}`}>{order.status}</span></div><div className="mt-1 text-[11px] text-[#78837d]">{order.customerName} · {order.type}</div>{order.customerPhone&&<div className="mt-1 text-[11px] text-[#78837d]">{order.customerPhone}</div>}{order.deliveryAddress&&order.type==='Home Delivery'&&<div className="mt-1 text-[11px] text-[#78837d]">{order.deliveryAddress}</div>}<div className="mt-2 text-xs text-[#52625a]">{order.items.map(item=>item.qty+'× '+item.name).join(', ')}</div><div className="mt-2 flex items-center justify-between border-t border-[#eee8da] pt-2 text-xs"><span className="text-[#78837d]">Paid {currency(order.paid)} · Due {currency(due)}</span><strong className="text-[#145044]">{currency(order.total)}</strong></div><div className="mt-2 flex flex-wrap gap-2">{due>0.005&&<><button onClick={()=>void collectQrOrderPayment(order,'Cash')} className="rounded-lg border border-[#145044]/20 px-2.5 py-1.5 text-[10px] font-semibold text-[#145044]">Collect Cash</button><button onClick={()=>void collectQrOrderPayment(order,'Mada')} className="rounded-lg border border-[#145044]/20 px-2.5 py-1.5 text-[10px] font-semibold text-[#145044]">Collect Mada</button></>}{order.status!=='Completed'&&<button onClick={()=>changeStatus(order.id)} className="rounded-lg bg-[#145044] px-3 py-1.5 text-[10px] font-semibold text-white">Next status</button>}</div></article>})}{!orders.some(order=>order.channel==='qr'&&order.number!=='HOLD')&&<div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#d9d2c1] bg-[#fbf9f2] px-5 py-10 text-center"><Grid2X2 size={22} className="mb-3 text-[#145044]"/><h3 className="text-sm font-bold text-[#18382f]">No QR orders yet</h3><p className="mt-2 max-w-xs text-xs leading-5 text-[#78837d]">Customer orders submitted from the public QR menu will appear here.</p></div>}</div>}
     </aside>
   </div>;
 
