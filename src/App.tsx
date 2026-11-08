@@ -608,7 +608,7 @@ function App() {
       return;
     }
     const number = nextNumber();
-    const order: Order = { id: `o-${number}`, number, type: orderType, status: 'Completed', createdAt: new Date().toISOString(), customerName: customers.find(customer => customer.id === selectedCustomerId)?.name || 'Walk-in Guest', tableNumber: restaurantTables.find(table=>table.id===selectedTableId)?.tableNumber, items: cart.map(item => ({ id: item.id, productId: item.productId, name: item.name, qty: item.qty, unitPrice: item.price, note: note || undefined })), subtotal, tax, discount: discountAmount, total, paid: total, paymentMethod: paymentBreakdown[paymentBreakdown.length - 1].method, paymentBreakdown, kitchenNote: note || undefined };
+    const order: Order = { id: `o-${number}`, number, type: orderType, status: kitchenAcceptanceRequired ? 'Pending' : 'Completed', createdAt: new Date().toISOString(), customerName: customers.find(customer => customer.id === selectedCustomerId)?.name || 'Walk-in Guest', tableNumber: restaurantTables.find(table=>table.id===selectedTableId)?.tableNumber, items: cart.map(item => ({ id: item.id, productId: item.productId, name: item.name, qty: item.qty, unitPrice: item.price, note: note || undefined })), subtotal, tax, discount: discountAmount, total, paid: total, paymentMethod: paymentBreakdown[paymentBreakdown.length - 1].method, paymentBreakdown, kitchenNote: note || undefined };
     setInventory(current => current.map(item => {
       const amount = deductions.get(item.name.trim().toLowerCase()) || 0;
       return amount && item.trackStock ? { ...item, stock: item.stock - amount } : item;
@@ -621,7 +621,7 @@ function App() {
     setOrders(current => [order, ...current]);
     if(selectedTableId)setRestaurantTables(current=>current.map(table=>table.id===selectedTableId?{...table,status:'Occupied' as TableRecord['status']}:table));
     setLogs(current => [
-      { id: `log-${Date.now()}`, title: 'Sale completed', detail: `Order #{number} · ${currency(total)} · ${paymentBreakdown.map(payment=>`${payment.method} ${currency(payment.amount)}`).join(' + ')}`, time },
+      { id: `log-${Date.now()}`, title: order.status === 'Completed' ? 'Sale completed' : 'Order sent to kitchen', detail: `Order #{number} · ${currency(total)} · ${paymentBreakdown.map(payment=>`${payment.method} ${currency(payment.amount)}`).join(' + ')}`, time },
       ...stockLogs,
       ...current
     ]);
