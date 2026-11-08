@@ -156,9 +156,16 @@ test('kitchen acceptance is optional and controls only the initial order status'
   const defaults = await call('GET', '/api/settings');
   assert.equal(defaults.status, 200);
   assert.equal(defaults.body.settings.kitchenAcceptanceRequired, false);
+  assert.equal(defaults.body.settings.branchName, 'Main');
+  assert.equal(defaults.body.settings.receiptFooter, 'Thank you for visiting Musafir!');
+  assert.equal(defaults.body.settings.currency, 'SAR');
+  assert.equal(Number(defaults.body.settings.taxRate), 0.15);
+  assert.deepEqual(defaults.body.settings.paymentMethods, ['Cash', 'Mada']);
 
-  const enabled = await call('PATCH', '/api/settings', { kitchenAcceptanceRequired: true });
+  const enabled = await call('PATCH', '/api/settings', { kitchenAcceptanceRequired: true, branchName: 'Main POS', receiptFooter: 'Thank you for visiting our branch.' });
   assert.equal(enabled.status, 200);
+  assert.equal(enabled.body.settings.branchName, 'Main POS');
+  assert.equal(enabled.body.settings.receiptFooter, 'Thank you for visiting our branch.');
   const queued = await createOrder('Pickup', 'Cash');
   assert.equal(queued.status, 201, JSON.stringify(queued.body));
   const queuedStatus = await db.query('SELECT status FROM orders WHERE id=$1', [queued.body.order.id]);
