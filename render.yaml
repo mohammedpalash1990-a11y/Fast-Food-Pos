@@ -16,7 +16,7 @@ services:
       - key: CORS_ORIGIN
         value: https://musafir-fast-food-pos.onrender.com
       - key: PUBLIC_MENU_BASE_URL
-        value: https://musafir-fast-food-pos.onrender.com/menu
+        value: https://musafir-fast-food-pos.onrender.com/menu.html
       - key: BOOTSTRAP_ADMIN_EMAIL
         sync: false
       - key: BOOTSTRAP_ADMIN_PASSWORD
