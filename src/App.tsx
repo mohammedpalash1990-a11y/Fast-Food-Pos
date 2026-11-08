@@ -464,6 +464,67 @@ function App() {
   }, []).sort((a,b) => b.qty - a.qty).slice(0,4);
 
   const flash = (message: string) => setToast(message);
+  const collectOrderPayment = async (order: Order) => {
+    if (!apiConnected || !apiToken) { flash('Connect the POS backend to collect payment for a QR order.'); return; }
+    const due = Math.max(0, Number((order.total - order.paid).toFixed(2)));
+    if (due <= 0.005) { flash('This order is already fully paid.'); return; }
+    const method = (window.prompt(`Collect ${currency(due)} by Cash or Mada`, 'Cash') || '').trim();
+    if (method !== 'Cash' && method !== 'Mada') { flash('Payment method must be Cash or Mada.'); return; }
+    try {
+      const response = await fetch(`${apiBase.replace(/\\/$/, '')}/api/orders/${encodeURIComponent(order.id)}/payments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiToken}` },
+        body: JSON.stringify({ amount: due, method, note: 'QR order payment collected at POS' })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.payment) throw new Error(result.error || 'Payment could not be recorded.');
+      setOrders(current => current.map(item => item.id === order.id ? {
+        ...item,
+        paid: Number(result.paid),
+        paymentMethod: method as PaymentMethod,
+        paymentBreakdown: [...(item.paymentBreakdown || []), { method: method as PaymentMethod, amount: Number(result.payment.amount) }]
+      } : item));
+      flash(`Payment recorded: ${currency(due)} by ${method}.`);
+    } catch (error) {
+      flash(error instanceof Error ? error.message : 'Payment collection failed.');
+    }
+  };
+  const updateOrderStatus = async (order: Order, status: OrderStatus) => {
+    if (order.number === 'HOLD') { flash('Resume this held check before changing its status.'); return; }
+    if (order.status === 'Cancelled' || order.status === status) return;
+    if (status === 'Completed' && order.paid + 0.005 < order.total) { flash('Collect the full Cash or Mada payment before completing this order.'); return; }
+    if (status === 'Cancelled' && !window.confirm(`Cancel order #${order.number}? Any collected payment will be recorded as a refund.`)) return;
+    if (apiConnected && apiToken) {
+      try {
+        const response = await fetch(`${apiBase.replace(/\\/$/, '')}/api/orders/${encodeURIComponent(order.id)}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiToken}` },
+          body: JSON.stringify({ status })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.order) throw new Error(result.error || 'Order status could not be updated.');
+        setOrders(current => current.map(item => item.id === order.id ? { ...item, status: result.order.status as OrderStatus } : item));
+        flash(`Order #${order.number} updated: ${status}.`);
+      } catch (error) {
+        flash(error instanceof Error ? error.message : 'Order status update failed.');
+      }
+      return;
+    }
+    if (status === 'Cancelled') {
+      const returned = new Map<string, number>();
+      order.items.forEach(line => products.find(product => product.id === line.productId)?.recipe.forEach(ingredient => {
+        const key = ingredient.name.trim().toLowerCase();
+        returned.set(key, (returned.get(key) || 0) + ingredient.qty * line.qty);
+      }));
+      setInventory(current => current.map(item => {
+        const quantity = returned.get(item.name.trim().toLowerCase()) || 0;
+        return quantity && item.trackStock ? { ...item, stock: item.stock + quantity } : item;
+      }));
+    }
+    setOrders(current => current.map(item => item.id === order.id ? { ...item, status } : item));
+    flash(`Order #${order.number} updated: ${status}.`);
+  };
+
   const nextNumber = () => { const next = Math.max(1000, ...orders.map(order => Number(order.number) || 0)) + 1; return String(next); };
   const addToCart = (product: Product) => {
     setCart(current => { const exists = current.find(item => item.productId === product.id); return exists ? current.map(item => item.productId === product.id ? { ...item, qty: item.qty + 1 } : item) : [...current, { id: `${product.id}-${Date.now()}`, productId: product.id, name: product.name, price: product.price, qty: 1 }]; });
@@ -916,7 +977,27 @@ function App() {
 
   </div>;
 
-  const ordersView = (): ReactNode => <section className={`${panel} p-5`}><div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Sales history','Orders','Every confirmed sale stays here. Open any receipt and print only when needed.')}</div><div className="space-y-3">{orders.map(order=><article key={order.id} className="rounded-2xl border border-white/[.07] bg-[#191e24] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><div className="font-semibold text-white">{order.number==='HOLD'?'Held check':`Order #${order.number}`} <span className="ml-2 text-xs font-normal text-slate-400">{order.customerName}</span></div><div className="mt-1 text-xs text-slate-500">{order.type}{order.tableNumber?` · Table ${order.tableNumber}`:''} · {new Date(order.createdAt).toLocaleString()}</div></div><div className="flex items-center gap-2"><span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs text-emerald-300">{order.number==='HOLD'?'On hold':'Saved'}</span>{order.number==='HOLD'&&<button onClick={()=>resumeOrder(order)} className="rounded-lg bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]">Resume</button>}<button onClick={()=>printOrder(order)} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:border-[#e7b943]/40"><Printer size={13}/> Print</button></div></div><div className="mt-3 flex flex-wrap justify-between gap-2 border-t border-white/[.06] pt-3 text-xs text-slate-400"><span>{order.items.map(item=>`${item.qty}× ${item.name}`).join(' · ')}</span><span className="font-semibold text-[#e7b943]">{currency(order.total)} · Paid {currency(order.paid)}{order.paymentBreakdown?.length ? ` · ${order.paymentBreakdown.map(payment=>`${payment.method} ${currency(payment.amount)}`).join(' + ')}` : ''}</span></div></article>)}</div>{!orders.length&&<p className="py-12 text-center text-slate-500">No completed orders yet.</p>}</section>;
+  const ordersView = (): ReactNode => <section className={`${panel} p-5`}>
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Sales & kitchen','Orders','Track order preparation, collect QR payments and print receipts.')}</div>
+    <div className="space-y-3">{orders.map(order=>{
+      const nextStatus:Partial<Record<OrderStatus,OrderStatus>>={Pending:'Accepted',Accepted:'Preparing',Preparing:'Ready',Ready:'Completed'};
+      const next=nextStatus[order.status];
+      const due=Math.max(0,Number((order.total-order.paid).toFixed(2)));
+      return <article key={order.id} className="rounded-2xl border border-white/[.07] bg-[#191e24] p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><div className="font-semibold text-white">{order.number==='HOLD'?'Held check':`Order #${order.number}`} <span className="ml-2 text-xs font-normal text-slate-400">{order.customerName}</span></div><div className="mt-1 text-xs text-slate-500">{order.type}{order.tableNumber?` · Table ${order.tableNumber}`:''} · {new Date(order.createdAt).toLocaleString()}{order.channel==='qr'?' · QR order':''}</div></div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-2.5 py-1 text-xs ${order.status==='Completed'?'bg-emerald-400/10 text-emerald-300':order.status==='Cancelled'?'bg-rose-400/10 text-rose-300':'bg-amber-400/10 text-amber-200'}`}>{order.number==='HOLD'?'On hold':order.status}</span>
+            {order.number==='HOLD'&&<button onClick={()=>resumeOrder(order)} className="rounded-lg bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]">Resume</button>}
+            {order.channel==='qr'&&due>0.005&&<button onClick={()=>void collectOrderPayment(order)} className="rounded-lg bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]">Collect {currency(due)}</button>}
+            {next&&order.number!=='HOLD'&&<button onClick={()=>void updateOrderStatus(order,next)} className="rounded-lg border border-emerald-400/20 px-3 py-2 text-xs text-emerald-300">{next==='Accepted'?'Accept':next==='Preparing'?'Start preparing':next==='Ready'?'Mark ready':'Complete'}</button>}
+            {order.status!=='Completed'&&order.status!=='Cancelled'&&order.number!=='HOLD'&&<button onClick={()=>void updateOrderStatus(order,'Cancelled')} className="rounded-lg border border-rose-400/20 px-3 py-2 text-xs text-rose-300">Cancel</button>}
+            <button onClick={()=>printOrder(order)} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:border-[#e7b943]/40"><Printer size={13}/> Print</button>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap justify-between gap-2 border-t border-white/[.06] pt-3 text-xs text-slate-400"><span>{order.items.map(item=>`${item.qty}× ${item.name}`).join(' · ')}</span><span className="font-semibold text-[#e7b943]">{currency(order.total)} · Paid {currency(order.paid)}{due>0.005?` · Due ${currency(due)}`:''}{order.paymentBreakdown?.length?` · ${order.paymentBreakdown.map(payment=>`${payment.method} ${currency(payment.amount)}`).join(' + ')}`:''}</span></div>
+      </article>;
+    })}</div>{!orders.length&&<p className="py-12 text-center text-slate-500">No orders recorded yet.</p>}</section>;
 
   const inventoryView = (): ReactNode => <section className={`${panel} p-5`}><div className="mb-5 flex flex-wrap items-end justify-between gap-3">{heading('Stock control','Inventory','Items are unlimited until you enter a quantity to track.')}<button onClick={addInventoryItem} className="inline-flex items-center gap-2 rounded-xl bg-[#e7b943] px-3 py-2 text-xs font-semibold text-[#17130b]"><Plus size={14}/> Add stock item</button></div><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="text-[11px] uppercase tracking-wider text-slate-500"><tr><th className="pb-3">Ingredient</th><th className="pb-3">Category</th><th className="pb-3">On hand</th><th className="pb-3">Reorder at</th><th className="pb-3">Supplier</th><th className="pb-3">Status</th><th/></tr></thead><tbody>{inventory.map(item=><tr key={item.id} className="border-t border-white/[.06]"><td className="py-3 font-medium text-slate-200">{item.name}</td><td className="py-3 text-slate-400">{item.category}</td><td className="py-3 text-slate-300">{item.trackStock?`${item.stock} ${item.unit}`:'Unlimited'}</td><td className="py-3 text-slate-400">{item.trackStock?`${item.reorderLevel} ${item.unit}`:'—'}</td><td className="py-3 text-slate-400">{item.supplier}</td><td className="py-3"><span className={`rounded-full px-2 py-1 text-[11px] ${!item.trackStock?'bg-slate-400/10 text-slate-300':item.stock<=item.reorderLevel?'bg-rose-400/10 text-rose-300':'bg-emerald-400/10 text-emerald-300'}`}>{!item.trackStock?'Unlimited':item.stock<=item.reorderLevel?'Restock':'In stock'}</span></td><td className="py-3 text-right"><div className="flex justify-end gap-2"><button onClick={()=>editInventoryItem(item)} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-300">Edit</button><button onClick={()=>addStock(item)} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-300 hover:border-[#e7b943]/40">Receive stock</button></div></td></tr>)}</tbody></table></div></section>;
   const assignDelivery = async (order:Order) => {
