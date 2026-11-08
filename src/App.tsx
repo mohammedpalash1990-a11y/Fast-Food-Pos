@@ -29,6 +29,16 @@ const themePresets: Record<ThemePresetName, { accent: string; background: string
   'Modern Ivory': { accent:'#B89B68', background:'#F4F1E9', surface:'#FFFFFF', sidebar:'#26332C', text:'#26332C', muted:'#68766E', border:'#DED8CA' }
 };
 const defaultThemeConfig: ThemeConfig = { preset:'Modern Ivory', appearance:'Light', customColors:{ accent:'#B89B68', background:'#F4F1E9', surface:'#FFFFFF', sidebar:'#18362B' } };
+const loadThemeConfig = (): ThemeConfig => {
+  const saved = safeRead<ThemeConfig | null>('musafir-theme-config', null);
+  const wasPreviousDefault = saved?.preset === 'Arabian Royal'
+    && saved.appearance === 'Both'
+    && saved.customColors?.accent === '#C6A66B'
+    && saved.customColors?.background === '#102B25'
+    && saved.customColors?.surface === '#1D3A31'
+    && saved.customColors?.sidebar === '#0B211B';
+  return !saved || wasPreviousDefault ? defaultThemeConfig : saved;
+};
 const getThemeStyle = (config: ThemeConfig, light: boolean): CSSProperties => {
   const preset = themePresets[config.preset] || themePresets['Arabian Royal'];
   return {
@@ -97,8 +107,8 @@ function App() {
   const [note, setNote] = useState('');
   const [toast, setToast] = useState('');
   const [mobileNav, setMobileNav] = useState(false);
-  const [themeConfig, setThemeConfig] = useState<ThemeConfig>(() => safeRead('musafir-theme-config', defaultThemeConfig));
-  const [draftThemeConfig, setDraftThemeConfig] = useState<ThemeConfig>(() => safeRead('musafir-theme-config', defaultThemeConfig));
+  const [themeConfig, setThemeConfig] = useState<ThemeConfig>(loadThemeConfig);
+  const [draftThemeConfig, setDraftThemeConfig] = useState<ThemeConfig>(loadThemeConfig);
   const [light, setLight] = useState<boolean>(() => safeRead('musafir-theme-light', false));
   const [draftLight, setDraftLight] = useState<boolean>(() => safeRead('musafir-theme-light', false));
   const [apiBase, setApiBase] = useState(() => safeRead('musafir-api-base', import.meta.env.VITE_API_URL || ''));
