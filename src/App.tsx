@@ -76,7 +76,8 @@ function App() {
   const [apiPassword, setApiPassword] = useState('');
   const [apiToken, setApiToken] = useState(() => readSession('musafir-api-token'));
   const [apiBranchId, setApiBranchId] = useState(() => readSession('musafir-api-branch'));
-  const [apiRole, setApiRole] = useState(() => readSession('musafir-api-role'));\n  const [apiUserId,setApiUserId]=useState(()=>readSession('musafir-api-user'));
+  const [apiRole, setApiRole] = useState(() => readSession('musafir-api-role'));
+  const [apiUserId,setApiUserId]=useState(()=>readSession('musafir-api-user'));
   const [staffUsers,setStaffUsers]=useState<Array<{id:string;email:string;displayName:string;role:string;active:boolean;createdAt:string}>>([]);
   const [staffEmail,setStaffEmail]=useState('');
   const [staffName,setStaffName]=useState('');
