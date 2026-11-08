@@ -27,7 +27,7 @@ before(async()=>{
   ids.org=(await db.query('INSERT INTO organizations(name,slug) VALUES($1,$2) RETURNING id',['Coupon IT '+suffix,'coupon-it-'+suffix])).rows[0].id;
   ids.branch=(await db.query('INSERT INTO branches(organization_id,name,code) VALUES($1,$2,$3) RETURNING id',[ids.org,'Coupon Branch','CP-'+suffix])).rows[0].id;
   ids.user=(await db.query('INSERT INTO users(organization_id,branch_id,email,password_hash,display_name,role) VALUES($1,$2,$3,$4,$5,$6) RETURNING id',[ids.org,ids.branch,'coupon-'+suffix+'@it.local',await bcrypt.hash('Coupon-Integration-Pass-1',4),'Coupon Owner','owner'])).rows[0].id;
-  ids.category=(await db.query('INSERT INTO categories(organization_id,name) VALUES($1,$2) RETURNING id',[ids.org,'Coupon Test']).rows[0].id;
+  ids.category=(await db.query('INSERT INTO categories(organization_id,name) VALUES($1,$2) RETURNING id',[ids.org,'Coupon Test'])).rows[0].id;
   ids.product=(await db.query('INSERT INTO products(organization_id,category_id,sku,name,price) VALUES($1,$2,$3,$4,$5) RETURNING id',[ids.org,ids.category,'CP-'+suffix,'Coupon Test Meal',20])).rows[0].id;
   token=jwt.sign({sub:ids.user},process.env.JWT_SECRET!,{expiresIn:'8h',issuer:'musafir-pos'});
 });
