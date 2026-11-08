@@ -277,7 +277,11 @@ export function bootstrapProductionAdmin(): { bootstrapped: boolean; reason?: st
   const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
   const restaurantName = process.env.BOOTSTRAP_RESTAURANT_NAME?.trim() || 'Musafir Fast Food';
   const branchName = process.env.BOOTSTRAP_BRANCH_NAME?.trim() || 'Main Branch';
-  const branchCode = process.env.BOOTSTRAP_BRANCH_CODE?.trim().toUpperCase() || 'MAIN-01';
+  const branchCode = process.env.BOOTSTRAP_BRANCH_CODE?.trim().toUpperCase() || 'KSA-01';
+  const currency = process.env.BOOTSTRAP_CURRENCY?.trim() || 'SAR';
+  const taxRate = process.env.BOOTSTRAP_TAX_RATE !== undefined ? Number(process.env.BOOTSTRAP_TAX_RATE) : 15;
+  const phone = process.env.BOOTSTRAP_PHONE?.trim() || '+966 50 000 0000';
+  const address = process.env.BOOTSTRAP_ADDRESS?.trim() || 'King Fahd Road, Riyadh';
 
   if (!email || !password) {
     return {
@@ -296,7 +300,8 @@ export function bootstrapProductionAdmin(): { bootstrapped: boolean; reason?: st
   }
 
   return inTransaction(() => {
-    // Ensure organization / restaurant settings exist with bootstrap custom names if specified
+    // Only insert initial settings if settings row 1 does not exist.
+    // Preserves existing organization and branch settings idempotently without overwriting.
     const existingSettings = db.prepare('SELECT id FROM settings WHERE id = 1').get();
     if (!existingSettings) {
       db.prepare(`
@@ -307,24 +312,12 @@ export function bootstrapProductionAdmin(): { bootstrapped: boolean; reason?: st
         restaurantName,
         branchName,
         branchCode,
-        '+880 1711-000000',
-        'Main Street, City Center',
-        '৳',
-        5,
-        'Thank you for dining with us!',
+        phone,
+        address,
+        currency,
+        taxRate,
+        'Thank you for dining with Musafir Fast Food!',
         ''
-      );
-    } else if (process.env.BOOTSTRAP_RESTAURANT_NAME || process.env.BOOTSTRAP_BRANCH_NAME || process.env.BOOTSTRAP_BRANCH_CODE) {
-      db.prepare(`
-        UPDATE settings SET
-          restaurant_name = COALESCE(?, restaurant_name),
-          branch_name = COALESCE(?, branch_name),
-          branch_code = COALESCE(?, branch_code)
-        WHERE id = 1
-      `).run(
-        process.env.BOOTSTRAP_RESTAURANT_NAME?.trim() || null,
-        process.env.BOOTSTRAP_BRANCH_NAME?.trim() || null,
-        process.env.BOOTSTRAP_BRANCH_CODE?.trim().toUpperCase() || null
       );
     }
 
@@ -351,6 +344,14 @@ export function bootstrapProductionAdmin(): { bootstrapped: boolean; reason?: st
 
 export function ensureSeeded(): void {
   initSchema();
+
+  if (process.env.NODE_ENV === 'production') {
+    if (process.env.BOOTSTRAP_ADMIN_EMAIL && process.env.BOOTSTRAP_ADMIN_PASSWORD) {
+      bootstrapProductionAdmin();
+    }
+    // In production mode, NEVER insert demo products, demo categories, demo users, or sample transactions.
+    return;
+  }
 
   if (process.env.BOOTSTRAP_ADMIN_EMAIL && process.env.BOOTSTRAP_ADMIN_PASSWORD) {
     bootstrapProductionAdmin();

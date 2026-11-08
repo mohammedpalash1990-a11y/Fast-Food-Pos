@@ -13,7 +13,7 @@
     "db:migrate": "tsx server/migrate.ts",
     "db:seed": "tsx server/seed.ts",
     "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
-    "test": "TEST_MODE=1 tsx --test tests/**/*.test.ts"
+    "test": "TEST_MODE=1 SQLITE_PATH=data/test-isolated-bootstrap.db JWT_SECRET=test-jwt-secret-minimum-32-chars-long-bootstrap-suite tsx --test tests/**/*.test.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

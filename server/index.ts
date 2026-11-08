@@ -29,7 +29,9 @@ import type {
   Supplier
 } from '../src/types.js';
 
-ensureSeeded();
+if (process.env.NODE_ENV !== 'test' && !process.env.TEST_MODE) {
+  ensureSeeded();
+}
 
 type AuthedRequest = Request & { user?: AuthUser };
 
@@ -45,9 +47,11 @@ const authLimiter = rateLimit({
   legacyHeaders: false
 });
 
-const secret = process.env.JWT_SECRET && process.env.JWT_SECRET.length >= 32
-  ? process.env.JWT_SECRET
-  : 'musafir-fast-food-pos-jwt-secret-key-2026-default';
+const rawSecret = process.env.JWT_SECRET;
+if (!rawSecret || rawSecret.length < 32) {
+  throw new Error('JWT_SECRET must be set to at least 32 characters');
+}
+const secret: string = rawSecret;
 
 function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
   try {
@@ -418,7 +422,7 @@ app.put('/api/settings', requireAuth, (req: AuthedRequest, res) => {
     const branchCode = String(body.branchCode || '').trim().toUpperCase();
     const phone = String(body.phone || '').trim();
     const address = String(body.address || '').trim();
-    const currency = String(body.currency || '৳').trim();
+    const currency = String(body.currency || 'SAR').trim();
     const taxRate = Math.max(0, Math.min(50, Number(body.taxRate) || 0));
     const receiptFooter = String(body.receiptFooter || '').trim();
     const publicMenuUrl = String(body.publicMenuUrl || '').trim();

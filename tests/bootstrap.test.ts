@@ -1,29 +1,33 @@
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Server } from 'node:http';
 import bcrypt from 'bcryptjs';
 
-const testDbPath = resolve(process.cwd(), 'data/pos.db');
+const isolatedDbPath = resolve(process.cwd(), 'data/test-isolated-bootstrap.db');
 
-// Reset pos.db for test run
-try {
-  rmSync(testDbPath, { force: true });
-} catch {
-  // ignore
-}
-
-process.env.NODE_ENV = 'test';
-process.env.PORT = '3099';
-process.env.JWT_SECRET = 'test-jwt-secret-minimum-32-chars-long-bootstrap-suite';
-
-import { bootstrapProductionAdmin, db, initSchema } from '../server/db.js';
+import { bootstrapProductionAdmin, db, ensureSeeded, initSchema } from '../server/db.js';
 import { app } from '../server/index.js';
 
 describe('Production Admin Bootstrap unit tests', () => {
   before(() => {
     initSchema();
+  });
+
+  after(() => {
+    try {
+      rmSync(isolatedDbPath, { force: true });
+      rmSync(`${isolatedDbPath}-shm`, { force: true });
+      rmSync(`${isolatedDbPath}-wal`, { force: true });
+    } catch {
+      // ignore
+    }
+  });
+
+  test('test suite preserves real data/pos.db and never deletes it', () => {
+    assert.notEqual(process.env.SQLITE_PATH, 'data/pos.db');
+    assert.match(process.env.SQLITE_PATH || '', /test-isolated/);
   });
 
   test('bootstrap fails gracefully if BOOTSTRAP_ADMIN_EMAIL or PASSWORD missing', () => {
@@ -46,12 +50,14 @@ describe('Production Admin Bootstrap unit tests', () => {
     assert.throws(() => bootstrapProductionAdmin(), /12–128 characters/);
   });
 
-  test('bootstrap succeeds with valid credentials and sets up owner & organization/branch', () => {
+  test('bootstrap defaults are Saudi/neutral and respect environment configuration', () => {
     process.env.BOOTSTRAP_ADMIN_EMAIL = 'prod-owner@example.com';
     process.env.BOOTSTRAP_ADMIN_PASSWORD = 'SuperSecurePassword2026!';
-    process.env.BOOTSTRAP_RESTAURANT_NAME = 'Musafir Global HQ';
-    process.env.BOOTSTRAP_BRANCH_NAME = 'Sylhet City Branch';
-    process.env.BOOTSTRAP_BRANCH_CODE = 'SYL-01';
+    delete process.env.BOOTSTRAP_RESTAURANT_NAME;
+    delete process.env.BOOTSTRAP_BRANCH_NAME;
+    delete process.env.BOOTSTRAP_BRANCH_CODE;
+    delete process.env.BOOTSTRAP_CURRENCY;
+    delete process.env.BOOTSTRAP_TAX_RATE;
 
     const res = bootstrapProductionAdmin();
     assert.equal(res.bootstrapped, true);
@@ -64,28 +70,55 @@ describe('Production Admin Bootstrap unit tests', () => {
 
     const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get() as Record<string, unknown>;
     assert.ok(settings, 'Settings row must exist');
-    assert.equal(settings.restaurant_name, 'Musafir Global HQ');
-    assert.equal(settings.branch_name, 'Sylhet City Branch');
-    assert.equal(settings.branch_code, 'SYL-01');
+    assert.equal(settings.restaurant_name, 'Musafir Fast Food');
+    assert.equal(settings.branch_name, 'Main Branch');
+    assert.equal(settings.branch_code, 'KSA-01');
+    assert.equal(settings.currency, 'SAR');
+    assert.equal(settings.tax_rate, 15);
+    assert.equal(settings.phone, '+966 50 000 0000');
+    assert.equal(settings.address, 'King Fahd Road, Riyadh');
   });
 
-  test('bootstrap is idempotent and does not overwrite existing owner password', () => {
+  test('bootstrap idempotency preserves existing organization and branch settings without overwriting', () => {
+    // Attempting re-bootstrap with different parameters must NOT overwrite the existing row
     process.env.BOOTSTRAP_ADMIN_EMAIL = 'prod-owner@example.com';
     process.env.BOOTSTRAP_ADMIN_PASSWORD = 'DifferentNewPassword2026!';
+    process.env.BOOTSTRAP_RESTAURANT_NAME = 'Overwritten Restaurant';
+    process.env.BOOTSTRAP_BRANCH_NAME = 'Overwritten Branch';
 
     const res = bootstrapProductionAdmin();
     assert.equal(res.bootstrapped, false);
     assert.match(res.reason || '', /already exists/);
 
-    const user = db.prepare('SELECT password_hash FROM users WHERE email = ?').get('prod-owner@example.com') as Record<string, unknown>;
+    const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get() as Record<string, unknown>;
+    assert.equal(settings.restaurant_name, 'Musafir Fast Food');
+    assert.equal(settings.branch_name, 'Main Branch');
+    assert.equal(settings.currency, 'SAR');
+
     // Original password must still be valid
+    const user = db.prepare('SELECT password_hash FROM users WHERE email = ?').get('prod-owner@example.com') as Record<string, unknown>;
     assert.equal(bcrypt.compareSync('SuperSecurePassword2026!', String(user.password_hash)), true);
-    // New password should not have overwritten it
     assert.equal(bcrypt.compareSync('DifferentNewPassword2026!', String(user.password_hash)), false);
+  });
+
+  test('ensureSeeded() in production mode does not insert demo products, demo users or dummy orders', () => {
+    const origEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      ensureSeeded();
+      const productCount = (db.prepare('SELECT COUNT(*) as count FROM products').get() as { count: number }).count;
+      assert.equal(productCount, 0, 'No demo products should be inserted in production');
+      const orderCount = (db.prepare('SELECT COUNT(*) as count FROM orders').get() as { count: number }).count;
+      assert.equal(orderCount, 0, 'No dummy orders should be inserted in production');
+      const demoUser = db.prepare("SELECT id FROM users WHERE email = 'admin@musafir.local'").get();
+      assert.equal(demoUser, undefined, 'Demo admin user should not be seeded in production');
+    } finally {
+      process.env.NODE_ENV = origEnv;
+    }
   });
 });
 
-describe('Production Owner API authentication and branch operations', () => {
+describe('Production Owner API authentication, JWT safety, and branch operations', () => {
   let server: Server;
   let API: string;
   let ownerToken: string;
@@ -106,6 +139,21 @@ describe('Production Owner API authentication and branch operations', () => {
     if (server) {
       await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
     }
+  });
+
+  test('server fails safely on startup if JWT_SECRET is missing or less than 32 characters', async () => {
+    const { spawnSync } = await import('node:child_process');
+    const childMissing = spawnSync('npx', ['tsx', '-e', 'import("./server/index.js")'], {
+      env: { ...process.env, JWT_SECRET: '', TEST_MODE: '1' }
+    });
+    assert.notEqual(childMissing.status, 0);
+    assert.match(childMissing.stderr.toString(), /JWT_SECRET must be set to at least 32 characters/);
+
+    const childShort = spawnSync('npx', ['tsx', '-e', 'import("./server/index.js")'], {
+      env: { ...process.env, JWT_SECRET: 'short-secret-under-32-chars', TEST_MODE: '1' }
+    });
+    assert.notEqual(childShort.status, 0);
+    assert.match(childShort.stderr.toString(), /JWT_SECRET must be set to at least 32 characters/);
   });
 
   test('owner login with bootstrapped credentials returns valid JWT', async () => {
@@ -155,29 +203,30 @@ describe('Production Owner API authentication and branch operations', () => {
       },
       body: JSON.stringify({
         restaurantName: 'Musafir Prime Dining',
-        branchName: 'Gulshan Flagship',
-        branchCode: 'GLS-01',
-        phone: '+880 1700-112233',
-        address: 'Road 103, Gulshan 2, Dhaka',
-        currency: '৳',
-        taxRate: 7.5,
+        branchName: 'Riyadh Olaya Branch',
+        branchCode: 'RUH-01',
+        phone: '+966 50 123 4567',
+        address: 'Olaya Street, Riyadh',
+        currency: 'SAR',
+        taxRate: 15,
         receiptFooter: 'Welcome to Musafir Prime!',
-        publicMenuUrl: 'https://prime.musafir.local/menu'
+        publicMenuUrl: 'https://prime.musafir.sa/menu'
       })
     });
 
     assert.equal(updateRes.status, 200);
     const body = (await updateRes.json()) as { settings: Record<string, unknown> };
     assert.equal(body.settings.restaurantName, 'Musafir Prime Dining');
-    assert.equal(body.settings.branchName, 'Gulshan Flagship');
-    assert.equal(body.settings.branchCode, 'GLS-01');
-    assert.equal(body.settings.taxRate, 7.5);
+    assert.equal(body.settings.branchName, 'Riyadh Olaya Branch');
+    assert.equal(body.settings.branchCode, 'RUH-01');
+    assert.equal(body.settings.taxRate, 15);
+    assert.equal(body.settings.currency, 'SAR');
 
     // Verify GET /api/settings
     const getRes = await fetch(`${API}/api/settings`);
     assert.equal(getRes.status, 200);
     const getBody = (await getRes.json()) as { settings: Record<string, unknown> };
-    assert.equal(getBody.settings.branchCode, 'GLS-01');
+    assert.equal(getBody.settings.branchCode, 'RUH-01');
     assert.equal(getBody.settings.restaurantName, 'Musafir Prime Dining');
   });
 
@@ -189,8 +238,8 @@ describe('Production Owner API authentication and branch operations', () => {
         Authorization: `Bearer ${ownerToken}`
       },
       body: JSON.stringify({
-        displayName: 'Branch Manager Karim',
-        email: 'karim.branch@example.com',
+        displayName: 'Branch Manager Tariq',
+        email: 'tariq.branch@example.com',
         role: 'manager',
         password: 'ManagerPassword123!'
       })
@@ -198,7 +247,7 @@ describe('Production Owner API authentication and branch operations', () => {
 
     assert.equal(res.status, 201);
     const body = (await res.json()) as { user: { email: string; role: string } };
-    assert.equal(body.user.email, 'karim.branch@example.com');
+    assert.equal(body.user.email, 'tariq.branch@example.com');
     assert.equal(body.user.role, 'manager');
   });
 
@@ -208,7 +257,7 @@ describe('Production Owner API authentication and branch operations', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: 'karim.branch@example.com',
+        email: 'tariq.branch@example.com',
         password: 'ManagerPassword123!'
       })
     });
