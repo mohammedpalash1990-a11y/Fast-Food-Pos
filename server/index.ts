@@ -413,9 +413,13 @@ app.patch('/api/orders/:id/status',authenticate,allow('owner','manager','cashier
   const parsed=z.object({status:z.enum(['Pending','Accepted','Preparing','Ready','Completed','Cancelled'])}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({error:'Invalid order status'});
   const result=await inTransaction(async client=>{
-    const current=await client.query('SELECT id,order_number,status,table_id FROM orders WHERE id=$1 AND branch_id=$2 AND organization_id=$3 FOR UPDATE',[String(req.params.id),req.user!.branchId,req.user!.organizationId]);
+    const current=await client.query('SELECT id,order_number,status,table_id,total FROM orders WHERE id=$1 AND branch_id=$2 AND organization_id=$3 FOR UPDATE',[String(req.params.id),req.user!.branchId,req.user!.organizationId]);
     if(!current.rowCount)throw Object.assign(new Error('Order not found in this branch'),{status:404});
     const previousStatus=String(current.rows[0].status);
+    if(parsed.data.status==='Completed'){
+      const payment=await client.query("SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS paid FROM payments WHERE order_id=$1",[String(req.params.id)]);
+      if(Number(payment.rows[0].paid)+0.005<Number(current.rows[0].total))throw Object.assign(new Error('Collect the full order total by Cash or Mada before completing this order.'),{status:409});
+    }
     let refundTotal=0;
     if(previousStatus==='Cancelled'&&parsed.data.status!=='Cancelled')throw Object.assign(new Error('A cancelled order cannot be reopened. Create a new order instead.'),{status:409});
     if(previousStatus!=='Cancelled'&&parsed.data.status==='Cancelled'){
