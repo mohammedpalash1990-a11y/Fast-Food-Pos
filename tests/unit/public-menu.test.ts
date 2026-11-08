@@ -26,9 +26,9 @@ test('the public menu is requested over a relative URL', () => {
 test('share links point at the customer menu page', () => {
   assert.equal(
     buildMenuShareUrl('https://pos.example.com/', branchId, '7'),
-    'https://pos.example.com/menu?branch=' + branchId + '&table=7'
+    'https://pos.example.com/menu.html?branch=' + branchId + '&table=7'
   );
-  assert.equal(buildMenuShareUrl('https://pos.example.com', branchId), 'https://pos.example.com/menu?branch=' + branchId);
+  assert.equal(buildMenuShareUrl('https://pos.example.com', branchId), 'https://pos.example.com/menu.html?branch=' + branchId);
 });
 
 test('prices render as SAR with two decimals and thousand separators', () => {
