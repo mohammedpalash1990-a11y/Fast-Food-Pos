@@ -349,7 +349,7 @@ function App() {
   useEffect(() => {
     if(!appliedCouponCode||!apiConnected||!apiToken||subtotal<=0)return;
     let active=true;
-    fetch(`${apiBase.replace(/\\/$/,'')}/api/coupons/validate`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({code:appliedCouponCode,subtotal})})
+    fetch(`${apiBase.replace(/\/$/,'')}/api/coupons/validate`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({code:appliedCouponCode,subtotal})})
       .then(async response=>{const result=await response.json();if(!response.ok||!result.coupon)throw new Error(result.error||'Coupon is no longer valid.');return result;})
       .then(result=>{if(active)setAppliedCoupon(current=>current?.code===appliedCouponCode?{...current,discount:Number(result.discount)}:current);})
       .catch(error=>{if(active){setAppliedCoupon(null);setCouponInput('');setToast(error instanceof Error?error.message:'Coupon could not be refreshed.');}});
