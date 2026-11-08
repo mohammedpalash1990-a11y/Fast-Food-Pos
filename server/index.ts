@@ -386,6 +386,24 @@ app.get('/api/orders',authenticate,allow('owner','manager','cashier','kitchen','
     ORDER BY o.created_at DESC LIMIT $2`,[req.user!.branchId,limit]);
   res.json({orders:rows.rows});
 }));
+
+app.post('/api/orders/:id/payments',authenticate,allow('owner','manager','cashier'),asyncRoute(async(req:AuthedRequest,res)=>{
+  const parsed=schema.payment.safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Enter a valid Cash or Mada payment'});
+  const payment=await inTransaction(async client=>{
+    const order=await client.query('SELECT id,order_number,total,status FROM orders WHERE id=$1 AND branch_id=$2 AND organization_id=$3 FOR UPDATE',[String(req.params.id),req.user!.branchId,req.user!.organizationId]);
+    if(!order.rowCount)throw Object.assign(new Error('Order not found in this branch'),{status:404});
+    if(order.rows[0].status==='Cancelled')throw Object.assign(new Error('A cancelled order cannot receive payment'),{status:409});
+    const balance=await client.query("SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS paid FROM payments WHERE order_id=$1",[String(req.params.id)]);
+    const due=Number(order.rows[0].total)-Number(balance.rows[0].paid);
+    if(parsed.data.amount>due+0.005)throw Object.assign(new Error('Payment exceeds the remaining order balance'),{status:400});
+    const inserted=await client.query("INSERT INTO payments(organization_id,branch_id,order_id,amount,method,direction,note,created_by) VALUES($1,$2,$3,$4,$5,'in',$6,$7) RETURNING id,amount,method,created_at",[req.user!.organizationId,req.user!.branchId,String(req.params.id),parsed.data.amount,parsed.data.method,parsed.data.note||'Order balance collected',req.user!.id]);
+    await audit(client,req.user!,'order.payment_collected','order',String(req.params.id),{orderNumber:order.rows[0].order_number,amount:parsed.data.amount,method:parsed.data.method});
+    return {payment:inserted.rows[0],paid:Number(balance.rows[0].paid)+parsed.data.amount,due:Math.max(0,due-parsed.data.amount)};
+  });
+  res.status(201).json(payment);
+}));
+
 app.patch('/api/orders/:id/status',authenticate,allow('owner','manager','cashier','kitchen'),asyncRoute(async(req:AuthedRequest,res)=>{
   const parsed=z.object({status:z.enum(['Pending','Accepted','Preparing','Ready','Completed','Cancelled'])}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({error:'Invalid order status'});
