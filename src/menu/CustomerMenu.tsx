@@ -23,6 +23,8 @@ export default function CustomerMenu(){
   const [notes,setNotes]=useState('');
   const [orderType,setOrderType]=useState<OrderType>(tableNumber?'Dine-in':'Pickup');
   const [submitting,setSubmitting]=useState(false);
+  const [checkoutKey,setCheckoutKey]=useState('');
+  const [checkoutFingerprint,setCheckoutFingerprint]=useState('');
   const [success,setSuccess]=useState<{number:string|number;total:number}|null>(null);
 
   useEffect(()=>{
@@ -50,25 +52,31 @@ export default function CustomerMenu(){
     if(orderType==='Home Delivery'&&!address.trim()){setError('Enter your delivery address.');return;}
     setSubmitting(true);setError('');
     try{
-      const idempotencyKey=crypto.randomUUID();
+      const payload={
+        branchId,
+        customerName:customerName.trim(),
+        phone:phone.trim(),
+        address:address.trim(),
+        orderType,
+        ...(orderType==='Dine-in'?{tableNumber}:{}),
+        notes:notes.trim(),
+        items:cartItems.map(item=>({productId:item.product.id,quantity:item.quantity}))
+      };
+      const fingerprint=JSON.stringify(payload);
+      const idempotencyKey=checkoutFingerprint===fingerprint&&checkoutKey?checkoutKey:crypto.randomUUID();
+      setCheckoutFingerprint(fingerprint);
+      setCheckoutKey(idempotencyKey);
       const response=await fetch(API_BASE+'/api/qr/orders',{
         method:'POST',
         headers:{'Content-Type':'application/json','Idempotency-Key':idempotencyKey},
-        body:JSON.stringify({
-          branchId,
-          customerName:customerName.trim(),
-          phone:phone.trim(),
-          address:address.trim(),
-          orderType,
-          ...(orderType==='Dine-in'?{tableNumber}:{}),
-          notes:notes.trim(),
-          items:cartItems.map(item=>({productId:item.product.id,quantity:item.quantity}))
-        })
+        body:JSON.stringify(payload)
       });
       const result=await response.json();
       if(!response.ok)throw new Error(result.error||'Your order could not be submitted.');
       setSuccess({number:result.order.order_number,total:Number(result.order.total)});
       setCart({});
+      setCheckoutKey('');
+      setCheckoutFingerprint('');
     }catch(reason){setError(reason instanceof Error?reason.message:'Your order could not be submitted.');}
     finally{setSubmitting(false);}
   };
