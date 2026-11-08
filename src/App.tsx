@@ -394,7 +394,7 @@ function App() {
     if (!cart.length) { flash('Add at least one menu item first.'); return; }
     if (orderType==='Dine-in' && apiConnected && (!selectedTableId || !restaurantTables.some(table=>table.id===selectedTableId&&['Available','Reserved'].includes(table.status)))) { flash('Select an available restaurant table for this dine-in order.'); return; }
     if (splitPayment && (!Number.isFinite(splitCashAmount) || splitCashAmount <= 0 || splitCashAmount >= total)) { flash('For split payment, enter a Cash amount greater than zero and less than the order total.'); return; }
-    if(couponCode.trim()&&!couponPreview){flash('Apply and validate the coupon before completing payment.');return;}
+    if(couponCode.trim()&&(!couponPreview||!couponIsCurrent)){flash('Apply and validate the coupon again before completing payment.');return;}
     const paymentBreakdown = splitPayment ? [{ method: 'Cash' as PaymentMethod, amount: Number(splitCashAmount.toFixed(2)) }, { method: 'Mada' as PaymentMethod, amount: Number(splitMadaAmount.toFixed(2)) }] : [{ method: payMethod, amount: Number(total.toFixed(2)) }];
     const orderPayload = { orderType, tableId: orderType==='Dine-in' ? selectedTableId || null : null, customerId: selectedCustomerId || null, paymentMethod: splitPayment ? 'Mada' as PaymentMethod : payMethod, payments: paymentBreakdown, discount: couponIsCurrent ? 0 : discountAmount, couponCode: couponIsCurrent ? couponPreview?.code || null : null, taxRate: 0.15, notes: note, items: cart.map(item => ({ productId: item.productId, quantity: item.qty })) };
     const payloadFingerprint = JSON.stringify(orderPayload);
