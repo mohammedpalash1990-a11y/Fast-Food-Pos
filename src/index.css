@@ -84,3 +84,148 @@ img { display: block; max-width: 100%; }
   .musafir-pos > section .grid.grid-cols-2 { gap: 7px; }
   .musafir-pos > section button { overflow-wrap: anywhere; }
 }
+
+
+/* International Theme Studio tokens. All theme changes are presentation-only. */
+.theme-shell {
+  background: var(--theme-bg) !important;
+  color: var(--theme-text) !important;
+  color-scheme: dark;
+}
+.theme-shell aside {
+  background: var(--theme-sidebar) !important;
+  border-color: var(--theme-border) !important;
+}
+.theme-shell header {
+  background: color-mix(in srgb, var(--theme-header) 94%, transparent) !important;
+  border-color: var(--theme-border) !important;
+}
+.theme-shell main { color: var(--theme-text); }
+.theme-shell .musafir-surface,
+.theme-shell [class*="bg-[#171c21]"],
+.theme-shell [class*="bg-[#191e24]"] {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text);
+}
+.theme-shell [class*="bg-white/"],
+.theme-shell [class*="bg-black/"] {
+  background-color: color-mix(in srgb, var(--theme-text) 5%, var(--theme-surface)) !important;
+}
+.theme-shell [class*="border-white/"] { border-color: var(--theme-border) !important; }
+.theme-shell .text-white,
+.theme-shell .text-slate-100,
+.theme-shell .text-slate-200,
+.theme-shell .text-slate-300 { color: var(--theme-text) !important; }
+.theme-shell .text-slate-400,
+.theme-shell .text-slate-500,
+.theme-shell .text-slate-600 { color: var(--theme-muted) !important; }
+.theme-shell .nav-item { color: var(--theme-muted); }
+.theme-shell .nav-item:hover { color: var(--theme-text); background: color-mix(in srgb, var(--theme-accent) 10%, transparent); }
+.theme-shell .nav-active {
+  color: var(--theme-accent) !important;
+  background: color-mix(in srgb, var(--theme-accent) 15%, transparent) !important;
+  box-shadow: inset 2px 0 var(--theme-accent);
+}
+.theme-shell .field {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text) !important;
+}
+.theme-shell .field::placeholder { color: var(--theme-muted) !important; }
+.theme-shell .qty-btn { background: color-mix(in srgb, var(--theme-accent) 15%, var(--theme-surface)); color: var(--theme-text); }
+.theme-shell [class*="bg-[#e7b943]"],
+.theme-shell [class*="bg-[#f0ca69]"] { background: var(--theme-accent) !important; }
+.theme-shell [class*="text-[#e7b943]"],
+.theme-shell [class*="text-[#caa348]"],
+.theme-shell [class*="text-[#cba84c]"] { color: var(--theme-accent) !important; }
+.theme-shell [class*="border-[#e7b943]"] { border-color: color-mix(in srgb, var(--theme-accent) 55%, transparent) !important; }
+.theme-shell button:focus-visible,
+.theme-shell input:focus-visible,
+.theme-shell select:focus-visible,
+.theme-shell textarea:focus-visible { outline-color: var(--theme-accent); }
+.theme-shell .musafir-pos .musafir-surface { background: var(--theme-surface) !important; border-color: var(--theme-border) !important; color: var(--theme-text) !important; }
+.theme-shell.theme-light {
+  color-scheme: light;
+  background: var(--theme-bg) !important;
+}
+.theme-shell.theme-light .text-white,
+.theme-shell.theme-light .text-slate-100,
+.theme-shell.theme-light .text-slate-200,
+.theme-shell.theme-light .text-slate-300 { color: #26332C !important; }
+.theme-shell.theme-light aside .text-white,
+.theme-shell.theme-light header .text-white,
+.theme-shell.theme-light aside .text-slate-100,
+.theme-shell.theme-light header .text-slate-100 { color: #F4F0E7 !important; }
+.theme-shell.theme-light [class*="bg-white/"],
+.theme-shell.theme-light [class*="bg-black/"] { background-color: #F0EDE4 !important; }
+.theme-shell.theme-light .field { background: #fff !important; color: #26332C !important; }
+.theme-shell.theme-light .nav-item { color: #C2CDC5; }
+.theme-shell.theme-light .nav-active { color: var(--theme-accent) !important; }
+.theme-shell.theme-light .musafir-pos .text-white { color: #26332C !important; }
+.theme-shell.theme-light .musafir-pos .text-slate-300,
+.theme-shell.theme-light .musafir-pos .text-slate-400 { color: #68766E !important; }
+.theme-shell.theme-light .musafir-pos .field { background: #fff !important; color: #26332C !important; }
+@media (max-width: 639px) {
+  .theme-shell main { padding-left: 12px; padding-right: 12px; }
+  .theme-shell [class*="grid-cols-3"] { min-width: 0; }
+  .theme-shell .table-scroll { max-width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-shell *, .theme-shell *::before, .theme-shell *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+
+
+/* Apply the selected palette to every POS workspace surface, not only Theme Studio. */
+.theme-shell main [class*="bg-[#191e24]"],
+.theme-shell main [class*="bg-[#171d22]"],
+.theme-shell main [class*="bg-[#171c21]"],
+.theme-shell main [class*="bg-[#14191f]"],
+.theme-shell main [class*="bg-[#20262c]"],
+.theme-shell main [class*="bg-[#22272c]"],
+.theme-shell main [class*="bg-[#fbf9f2]"] {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text);
+}
+.theme-shell main section[class*="bg-[radial-gradient"] {
+  background: linear-gradient(125deg, var(--theme-surface), var(--theme-bg)) !important;
+  border-color: color-mix(in srgb, var(--theme-accent) 28%, var(--theme-border)) !important;
+}
+.theme-shell main [class*="border-[#d6a943]"],
+.theme-shell main [class*="border-[#d9d2c3]"],
+.theme-shell main [class*="border-[#ded8ca]"] {
+  border-color: var(--theme-border) !important;
+}
+.theme-shell main [class*="text-[#f3d890]"],
+.theme-shell main [class*="text-[#946f19]"],
+.theme-shell main [class*="text-[#c99b2e]"] {
+  color: var(--theme-accent) !important;
+}
+.theme-shell main input:not([type="color"]),
+.theme-shell main select,
+.theme-shell main textarea {
+  accent-color: var(--theme-accent);
+}
+.theme-shell.theme-light main [class*="bg-[#191e24]"],
+.theme-shell.theme-light main [class*="bg-[#171d22]"],
+.theme-shell.theme-light main [class*="bg-[#171c21]"],
+.theme-shell.theme-light main [class*="bg-[#14191f]"],
+.theme-shell.theme-light main [class*="bg-[#20262c]"],
+.theme-shell.theme-light main [class*="bg-[#22272c]"],
+.theme-shell.theme-light main [class*="bg-[#fbf9f2]"] {
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+
+/* Customer QR order confirmation: receipt-only print layout. */
+@media print {
+  body { background: #fff !important; }
+  .qr-order-confirmation { display: block !important; min-height: 0 !important; max-width: 100% !important; padding: 0 !important; }
+  .qr-order-confirmation > div { border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+  .qr-order-confirmation > div > div:first-child { background: #102b25 !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .qr-order-confirmation > div > div:last-child { padding: 24px !important; }
+  .qr-order-confirmation button { display: none !important; }
+  .qr-order-confirmation p { break-inside: avoid; }
+}
