@@ -261,3 +261,67 @@ test('branch-scoped coupons validate, discount checkout totals and enforce expir
   const stockAfter = Number((await db.query('SELECT stock FROM ingredients WHERE id=$1', [ids.ingredient])).rows[0].stock);
   assert.equal(stockAfter, stockBefore, 'invalid coupon checkout must not deduct stock');
 });
+
+test('user administration enforces role hierarchy, branch scope, password rules and immediate account status', async () => {
+  const ownerToken = token;
+  const staffEmail = 'cashier-' + suffix + '@it.local';
+  const staff = await call('POST', '/api/users', {
+    email: staffEmail,
+    displayName: 'Branch Cashier',
+    password: 'Temporary-Staff-Pass-1',
+    role: 'cashier'
+  });
+  assert.equal(staff.status, 201, JSON.stringify(staff.body));
+  assert.equal(staff.body.user.role, 'cashier');
+
+  const listed = await call('GET', '/api/users');
+  assert.equal(listed.status, 200);
+  assert.equal(listed.body.users.some((user: {id:string}) => user.id === ids.user), false, 'the current owner account is not editable from the staff list');
+  assert.equal(listed.body.users.some((user: {id:string}) => user.id === staff.body.user.id), true);
+
+  const matrix = await call('GET', '/api/roles/permissions');
+  assert.equal(matrix.status, 200);
+  assert.equal(matrix.body.roles.length, 7);
+
+  const selfChange = await call('PATCH', '/api/users/' + ids.user, { active: false });
+  assert.equal(selfChange.status, 409);
+
+  const promoted = await call('PATCH', '/api/users/' + staff.body.user.id, { role: 'kitchen' });
+  assert.equal(promoted.status, 200);
+  assert.equal(promoted.body.user.role, 'kitchen');
+
+  const disabled = await call('PATCH', '/api/users/' + staff.body.user.id, { active: false });
+  assert.equal(disabled.status, 200);
+  const blockedLogin = await call('POST', '/api/auth/login', { email: staffEmail, password: 'Temporary-Staff-Pass-1' });
+  assert.equal(blockedLogin.status, 401);
+
+  const reactivated = await call('PATCH', '/api/users/' + staff.body.user.id, { active: true, password: 'Reset-Staff-Password-2' });
+  assert.equal(reactivated.status, 200);
+  const login = await call('POST', '/api/auth/login', { email: staffEmail, password: 'Reset-Staff-Password-2' });
+  assert.equal(login.status, 200);
+
+  const manager = await call('POST', '/api/users', {
+    email: 'manager-' + suffix + '@it.local',
+    displayName: 'Branch Manager',
+    password: 'Temporary-Manager-Pass-1',
+    role: 'manager'
+  });
+  assert.equal(manager.status, 201, JSON.stringify(manager.body));
+
+  token = jwt.sign({ sub: manager.body.user.id }, process.env.JWT_SECRET!, { expiresIn: '8h', issuer: 'musafir-pos' });
+  const managerList = await call('GET', '/api/users');
+  assert.equal(managerList.status, 200);
+  assert.equal(managerList.body.users.some((user: {role:string}) => user.role === 'owner' || user.role === 'manager'), false);
+
+  const elevatedCreate = await call('POST', '/api/users', {
+    email: 'owner-attempt-' + suffix + '@it.local',
+    displayName: 'Unauthorized Owner',
+    password: 'Temporary-Owner-Pass-1',
+    role: 'owner'
+  });
+  assert.equal(elevatedCreate.status, 403);
+
+  const elevatedUpdate = await call('PATCH', '/api/users/' + staff.body.user.id, { role: 'manager' });
+  assert.equal(elevatedUpdate.status, 403);
+  token = ownerToken;
+});
