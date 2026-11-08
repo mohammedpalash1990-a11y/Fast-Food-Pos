@@ -59,7 +59,17 @@ function App() {
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [payMethod, setPayMethod] = useState<PaymentMethod>('Cash');
-  const [discount, setDiscount] = useState('0');\n  const [couponCode, setCouponCode] = useState('');\n  const [couponPreview, setCouponPreview] = useState<{code:string;discount:number;total:number;fingerprint:string}|null>(null);\n  const [discountCoupons, setDiscountCoupons] = useState<Array<{id:string;code:string;discountType:string;discountValue:string|number;minSubtotal:string|number;maxDiscount:string|number|null;usageLimit:number|null;usedCount:number;expiresAt:string|null;active:boolean}>>([]);\n  const [newCouponCode, setNewCouponCode] = useState('');\n  const [newCouponType, setNewCouponType] = useState<'percentage'|'fixed'>('percentage');\n  const [newCouponValue, setNewCouponValue] = useState('10');\n  const [newCouponMin, setNewCouponMin] = useState('0');\n  const [newCouponMax, setNewCouponMax] = useState('');\n  const [newCouponLimit, setNewCouponLimit] = useState('');\n  const [newCouponExpiry, setNewCouponExpiry] = useState('');
+  const [discount, setDiscount] = useState('0');
+  const [couponCode, setCouponCode] = useState('');
+  const [couponPreview, setCouponPreview] = useState<{code:string;discount:number;total:number;fingerprint:string}|null>(null);
+  const [discountCoupons, setDiscountCoupons] = useState<Array<{id:string;code:string;discountType:string;discountValue:string|number;minSubtotal:string|number;maxDiscount:string|number|null;usageLimit:number|null;usedCount:number;expiresAt:string|null;active:boolean}>>([]);
+  const [newCouponCode, setNewCouponCode] = useState('');
+  const [newCouponType, setNewCouponType] = useState<'percentage'|'fixed'>('percentage');
+  const [newCouponValue, setNewCouponValue] = useState('10');
+  const [newCouponMin, setNewCouponMin] = useState('0');
+  const [newCouponMax, setNewCouponMax] = useState('');
+  const [newCouponLimit, setNewCouponLimit] = useState('');
+  const [newCouponExpiry, setNewCouponExpiry] = useState('');
   const [note, setNote] = useState('');
   const [toast, setToast] = useState('');
   const [mobileNav, setMobileNav] = useState(false);
@@ -327,11 +337,15 @@ function App() {
     }
     return () => controller.abort();
   }, [apiBase, apiToken, apiConnected, apiRole, view, reportRange]);
-  useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(''), 2800); return () => window.clearTimeout(timer); }, [toast]);\n  useEffect(() => { if(couponPreview && couponPreview.fingerprint!==JSON.stringify(cart.map(item=>({productId:item.productId,quantity:item.qty})))) { setCouponPreview(null); setCouponCode(''); } }, [cart,couponPreview]);\n  useEffect(() => { if(!apiConnected || !apiToken || view!=='discounts') return; let active=true; fetch(`${apiBase.replace(/\\/$/,'')}/api/discounts`,{headers:{Authorization:`Bearer ${apiToken}`}}).then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error||'Coupons could not be loaded');return data;}).then(data=>{if(active&&Array.isArray(data.coupons))setDiscountCoupons(data.coupons);}).catch(error=>{if(active)flash(error instanceof Error?error.message:'Coupons could not be loaded.');}); return ()=>{active=false;}; },[apiConnected,apiToken,apiBase,view]);
+  useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(''), 2800); return () => window.clearTimeout(timer); }, [toast]);
+  useEffect(() => { if(couponPreview && couponPreview.fingerprint!==JSON.stringify(cart.map(item=>({productId:item.productId,quantity:item.qty})))) { setCouponPreview(null); setCouponCode(''); } }, [cart,couponPreview]);
+  useEffect(() => { if(!apiConnected || !apiToken || view!=='discounts') return; let active=true; fetch(`${apiBase.replace(/\\/$/,'')}/api/discounts`,{headers:{Authorization:`Bearer ${apiToken}`}}).then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error||'Coupons could not be loaded');return data;}).then(data=>{if(active&&Array.isArray(data.coupons))setDiscountCoupons(data.coupons);}).catch(error=>{if(active)flash(error instanceof Error?error.message:'Coupons could not be loaded.');}); return ()=>{active=false;}; },[apiConnected,apiToken,apiBase,view]);
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
   const tax = subtotal * 0.15;
-  const currentCartFingerprint = JSON.stringify(cart.map(item=>({productId:item.productId,quantity:item.qty})));\n  const couponIsCurrent = Boolean(couponPreview && couponPreview.fingerprint===currentCartFingerprint);\n  const discountAmount = couponIsCurrent ? couponPreview!.discount : (subtotal + tax) * Math.max(0, Math.min(100, Number(discount) || 0)) / 100;
+  const currentCartFingerprint = JSON.stringify(cart.map(item=>({productId:item.productId,quantity:item.qty})));
+  const couponIsCurrent = Boolean(couponPreview && couponPreview.fingerprint===currentCartFingerprint);
+  const discountAmount = couponIsCurrent ? couponPreview!.discount : (subtotal + tax) * Math.max(0, Math.min(100, Number(discount) || 0)) / 100;
   const total = Math.max(0, subtotal + tax - discountAmount);
   const paid = total;
   const filteredProducts = useMemo(() => products.filter(p => (category === 'All' || p.category === category) && p.name.toLowerCase().includes(search.toLowerCase())), [products, category, search]);
@@ -354,11 +368,26 @@ function App() {
     setCart(current => { const exists = current.find(item => item.productId === product.id); return exists ? current.map(item => item.productId === product.id ? { ...item, qty: item.qty + 1 } : item) : [...current, { id: `${product.id}-${Date.now()}`, productId: product.id, name: product.name, price: product.price, qty: 1 }]; });
   };
   const clearCart = () => { orderIdempotencyKey.current = ''; orderIdempotencyPayload.current = ''; saveSession('musafir-order-idempotency-key',''); saveSession('musafir-order-idempotency-payload',''); setCart([]); setDiscount('0'); setCouponCode(''); setCouponPreview(null); setNote(''); setSelectedCustomerId(''); setSelectedTableId(''); };
-  const applyCoupon = async () => {\n    const code=couponCode.trim().toUpperCase();\n    if(!apiConnected||!apiToken||!code){flash('Connect the backend and enter a coupon code.');return;}\n    if(Number(discount)>0){flash('Remove the manual discount before applying a coupon.');return;}\n    try{const response=await fetch(`${apiBase.replace(/\\/$/,'')}/api/discounts/preview`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({code,items:cart.map(item=>({productId:item.productId,quantity:item.qty}))})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Coupon could not be applied');setCouponPreview({code:data.code,discount:Number(data.discount),total:Number(data.total),fingerprint:JSON.stringify(cart.map(item=>({productId:item.productId,quantity:item.qty})))});setCouponCode(data.code);flash(`Coupon ${data.code} applied.`);}catch(error){setCouponPreview(null);flash(error instanceof Error?error.message:'Coupon could not be applied.');}\n  };\n  const createCoupon = async () => {\n    if(!apiToken||!newCouponCode.trim()||!newCouponValue){flash('Enter a coupon code and discount value.');return;}\n    try{const response=await fetch(`${apiBase.replace(/\\/$/,'')}/api/discounts`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({code:newCouponCode,discountType:newCouponType,discountValue:Number(newCouponValue),minSubtotal:Number(newCouponMin)||0,maxDiscount:newCouponMax?Number(newCouponMax):null,usageLimit:newCouponLimit?Number(newCouponLimit):null,expiresAt:newCouponExpiry?new Date(newCouponExpiry).toISOString():null})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Coupon could not be created');setDiscountCoupons(current=>[data.coupon,...current]);setNewCouponCode('');flash(`Coupon ${data.coupon.code} created.`);}catch(error){flash(error instanceof Error?error.message:'Coupon could not be created.');}\n  };\n  const toggleCoupon = async (coupon:{id:string;active:boolean}) => {\n    try{const response=await fetch(`${apiBase.replace(/\\/$/,'')}/api/discounts/${coupon.id}`,{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({active:!coupon.active})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Coupon status could not be changed');setDiscountCoupons(current=>current.map(item=>item.id===coupon.id?{...item,active:data.coupon.active}:item));}catch(error){flash(error instanceof Error?error.message:'Coupon status could not be changed.');}\n  };\n  const placeOrder = async () => {
+  const applyCoupon = async () => {
+    const code=couponCode.trim().toUpperCase();
+    if(!apiConnected||!apiToken||!code){flash('Connect the backend and enter a coupon code.');return;}
+    if(Number(discount)>0){flash('Remove the manual discount before applying a coupon.');return;}
+    try{const response=await fetch(`${apiBase.replace(/\\/$/,'')}/api/discounts/preview`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({code,items:cart.map(item=>({productId:item.productId,quantity:item.qty}))})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Coupon could not be applied');setCouponPreview({code:data.code,discount:Number(data.discount),total:Number(data.total),fingerprint:JSON.stringify(cart.map(item=>({productId:item.productId,quantity:item.qty})))});setCouponCode(data.code);flash(`Coupon ${data.code} applied.`);}catch(error){setCouponPreview(null);flash(error instanceof Error?error.message:'Coupon could not be applied.');}
+  };
+  const createCoupon = async () => {
+    if(!apiToken||!newCouponCode.trim()||!newCouponValue){flash('Enter a coupon code and discount value.');return;}
+    try{const response=await fetch(`${apiBase.replace(/\\/$/,'')}/api/discounts`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({code:newCouponCode,discountType:newCouponType,discountValue:Number(newCouponValue),minSubtotal:Number(newCouponMin)||0,maxDiscount:newCouponMax?Number(newCouponMax):null,usageLimit:newCouponLimit?Number(newCouponLimit):null,expiresAt:newCouponExpiry?new Date(newCouponExpiry).toISOString():null})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Coupon could not be created');setDiscountCoupons(current=>[data.coupon,...current]);setNewCouponCode('');flash(`Coupon ${data.coupon.code} created.`);}catch(error){flash(error instanceof Error?error.message:'Coupon could not be created.');}
+  };
+  const toggleCoupon = async (coupon:{id:string;active:boolean}) => {
+    try{const response=await fetch(`${apiBase.replace(/\\/$/,'')}/api/discounts/${coupon.id}`,{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiToken}`},body:JSON.stringify({active:!coupon.active})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Coupon status could not be changed');setDiscountCoupons(current=>current.map(item=>item.id===coupon.id?{...item,active:data.coupon.active}:item));}catch(error){flash(error instanceof Error?error.message:'Coupon status could not be changed.');}
+  };
+  const placeOrder = async () => {
     if (orderSubmissionLock.current) return;
-    if (!cart.length) { flash('Add at least one menu item first.'); return; }\n    if(couponPreview&&(!couponIsCurrent||couponPreview.code!==couponCode.trim().toUpperCase())){setCouponPreview(null);flash('Coupon changed. Apply it again before checkout.');return;}
+    if (!cart.length) { flash('Add at least one menu item first.'); return; }
+    if(couponPreview&&(!couponIsCurrent||couponPreview.code!==couponCode.trim().toUpperCase())){setCouponPreview(null);flash('Coupon changed. Apply it again before checkout.');return;}
     if (orderType==='Dine-in' && apiConnected && (!selectedTableId || !restaurantTables.some(table=>table.id===selectedTableId&&['Available','Reserved'].includes(table.status)))) { flash('Select an available restaurant table for this dine-in order.'); return; }
-    if(couponCode.trim()&&!couponPreview){flash('Apply and validate the coupon before completing payment.');return;}\n    const orderPayload = { orderType, tableId: orderType==='Dine-in' ? selectedTableId || null : null, customerId: selectedCustomerId || null, paymentMethod: payMethod, discount: couponIsCurrent ? 0 : discountAmount, couponCode: couponIsCurrent ? couponPreview?.code || null : null, taxRate: 0.15, notes: note, items: cart.map(item => ({ productId: item.productId, quantity: item.qty })) };
+    if(couponCode.trim()&&!couponPreview){flash('Apply and validate the coupon before completing payment.');return;}
+    const orderPayload = { orderType, tableId: orderType==='Dine-in' ? selectedTableId || null : null, customerId: selectedCustomerId || null, paymentMethod: payMethod, discount: couponIsCurrent ? 0 : discountAmount, couponCode: couponIsCurrent ? couponPreview?.code || null : null, taxRate: 0.15, notes: note, items: cart.map(item => ({ productId: item.productId, quantity: item.qty })) };
     const payloadFingerprint = JSON.stringify(orderPayload);
     if (orderIdempotencyPayload.current !== payloadFingerprint) { orderIdempotencyKey.current = ''; orderIdempotencyPayload.current = payloadFingerprint; saveSession('musafir-order-idempotency-payload',payloadFingerprint); }
     orderSubmissionLock.current = true;
@@ -722,8 +751,10 @@ function App() {
   const assignDelivery = async (order:Order) => {
     if(!apiConnected||!apiToken){flash('Connect the POS API before dispatching delivery orders.');return;}
     if(!deliveryDrivers.length){flash('Add active staff with the Delivery role before assigning drivers.');return;}
-    const options=deliveryDrivers.map((driver,index)=>`${index+1}. ${driver.display_name}`).join('\n');
-    const choice=Number(window.prompt(`Choose delivery driver number:\n${options}`));
+    const options=deliveryDrivers.map((driver,index)=>`${index+1}. ${driver.display_name}`).join('
+');
+    const choice=Number(window.prompt(`Choose delivery driver number:
+${options}`));
     if(!Number.isInteger(choice)||choice<1||choice>deliveryDrivers.length)return;
     const driver=deliveryDrivers[choice-1];
     const address=(window.prompt('Delivery address')||'').trim();
@@ -901,7 +932,8 @@ function App() {
   const paySupplier = async (supplier: Supplier) => {
     if (!apiToken || !apiConnected) { flash('Connect the POS API before recording a supplier payment.'); return; }
     if (supplier.due <= 0) { flash('This supplier has no outstanding balance.'); return; }
-    const amount = Number(window.prompt(`Outstanding balance: ${currency(supplier.due)}\nPayment amount (SAR)`, String(supplier.due)));
+    const amount = Number(window.prompt(`Outstanding balance: ${currency(supplier.due)}
+Payment amount (SAR)`, String(supplier.due)));
     if (!Number.isFinite(amount) || amount <= 0) return;
     if (amount > supplier.due) { flash('Payment cannot exceed the outstanding balance.'); return; }
     const method = (window.prompt('Payment method: Cash or Mada', 'Cash') || '').trim();
@@ -951,12 +983,16 @@ function App() {
   };
   const addPurchase = async () => {
     if (!inventory.length || !suppliers.length) { flash('Add at least one inventory item and supplier first.'); return; }
-    const itemOptions = inventory.map((item, index) => `${index + 1}. ${item.name} (${item.trackStock ? `${item.stock} ${item.unit}` : 'Unlimited'})`).join('\n');
-    const itemChoice = Number(window.prompt(`Select inventory item by number:\n${itemOptions}`, '1'));
+    const itemOptions = inventory.map((item, index) => `${index + 1}. ${item.name} (${item.trackStock ? `${item.stock} ${item.unit}` : 'Unlimited'})`).join('
+');
+    const itemChoice = Number(window.prompt(`Select inventory item by number:
+${itemOptions}`, '1'));
     if (!Number.isInteger(itemChoice) || itemChoice < 1 || itemChoice > inventory.length) { flash('Select a valid inventory item.'); return; }
     const item = inventory[itemChoice - 1];
-    const supplierOptions = suppliers.map((supplier, index) => `${index + 1}. ${supplier.name}`).join('\n');
-    const supplierChoice = Number(window.prompt(`Select supplier by number:\n${supplierOptions}`, String(Math.max(1, suppliers.findIndex(supplier => supplier.name === item.supplier) + 1))));
+    const supplierOptions = suppliers.map((supplier, index) => `${index + 1}. ${supplier.name}`).join('
+');
+    const supplierChoice = Number(window.prompt(`Select supplier by number:
+${supplierOptions}`, String(Math.max(1, suppliers.findIndex(supplier => supplier.name === item.supplier) + 1))));
     if (!Number.isInteger(supplierChoice) || supplierChoice < 1 || supplierChoice > suppliers.length) { flash('Select a valid supplier.'); return; }
     const supplier = suppliers[supplierChoice - 1];
     const quantity = Number(window.prompt(`Quantity received (${item.unit})`, '1'));
@@ -1139,8 +1175,10 @@ function App() {
     if (!activeEmployees.length) { flash('Add an active employee before creating payroll.'); return; }
     const period = window.prompt('Payroll month (YYYY-MM)', localDate().slice(0, 7)) || '';
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) { flash('Enter a valid payroll month in YYYY-MM format.'); return; }
-    const employeeOptions = activeEmployees.map((employee, index) => `${index + 1}. ${employee.name} · ${currency(employee.salary)}`).join('\n');
-    const choice = Number(window.prompt(`Select employee:\n${employeeOptions}`, '1'));
+    const employeeOptions = activeEmployees.map((employee, index) => `${index + 1}. ${employee.name} · ${currency(employee.salary)}`).join('
+');
+    const choice = Number(window.prompt(`Select employee:
+${employeeOptions}`, '1'));
     if (!Number.isInteger(choice) || choice < 1 || choice > activeEmployees.length) { flash('Select a valid employee.'); return; }
     const employee = activeEmployees[choice - 1];
     if (payroll.some(item => item.employeeId === employee.id && item.period === period)) { flash('Payroll already exists for this employee and month.'); return; }
@@ -1204,7 +1242,9 @@ function App() {
   };
   const addExpense = async () => {
     const categories = ['Rent', 'Utilities', 'Staff welfare', 'Transport', 'Maintenance', 'Packaging', 'Cleaning', 'Marketing', 'Other'];
-    const category = window.prompt(`Expense category (\n${categories.join(', ')}\n)`, 'Other');
+    const category = window.prompt(`Expense category (
+${categories.join(', ')}
+)`, 'Other');
     if (!category?.trim()) return;
     const description = window.prompt('Expense description');
     if (!description?.trim()) return;
@@ -1318,7 +1358,8 @@ function App() {
     const csv = rows.map(row => row.map(value => {
       const text = String(value ?? '');
       return '"' + text.replace(/"/g, '""') + '"';
-    }).join(',')).join('\r\n');
+    }).join(',')).join('\r
+');
     const url = URL.createObjectURL(new Blob(['\\uFEFF', csv], { type: 'text/csv;charset=utf-8;' }));
     const link = document.createElement('a');
     link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url);
@@ -1550,8 +1591,11 @@ function App() {
   const editProductRecipe = async (product: Product) => {
     if (!apiConnected || !apiToken) { flash('Connect the live POS database before editing recipes.'); return; }
     if (!inventory.length) { flash('Add inventory ingredients before creating a recipe.'); return; }
-    const options = inventory.map((item,index)=>`${index+1}. ${item.name} (${item.unit})`).join('\n');
-    const selected = Number(window.prompt(`Select ingredient to add or update for ${product.name}:\n${options}\nEnter 0 to clear this recipe.`, '1'));
+    const options = inventory.map((item,index)=>`${index+1}. ${item.name} (${item.unit})`).join('
+');
+    const selected = Number(window.prompt(`Select ingredient to add or update for ${product.name}:
+${options}
+Enter 0 to clear this recipe.`, '1'));
     if (!Number.isInteger(selected) || selected<0 || selected>inventory.length) { flash('Select a valid ingredient number.'); return; }
     let recipe = [...product.recipe];
     if (selected===0) recipe=[];
@@ -1625,7 +1669,20 @@ function App() {
   const moduleMessages: Record<string,string> = { tables:'Manage table labels, seating capacity and branch-scoped occupancy status.', reservations:'Schedule guests, record party size and contact details, and track booked, seated, completed or cancelled reservations.', menu:'Create, edit, deactivate and reactivate products. Inactive products remain available for restoration.', categories:'Create, rename and delete categories. Categories with active products cannot be deleted.', recipes:'Manage recipes, estimate per-item ingredient cost and margin from current inventory unit costs, and check tracked stock capacity.', purchases:'Record goods received, add quantities to inventory and track supplier credit locally.', delivery:'Assign Home Delivery orders to branch delivery staff and track pickup and delivery status.', expenses:'Record shop operating expenses, payment method and expense date; review daily and monthly totals.', employees:'Manage employee profiles, monthly salaries and shift details in local POS storage.', attendance:'Update daily employee attendance status in local POS storage.', payroll:'Create monthly payroll, track salary advances, and record full or partial Cash/Mada salary payments.', reports:'Local totals are instant; a connected branch also shows server-verified sales, date filtering and CSV export.', profit:'Local totals stay available offline; a connected branch adds server-verified net sales, recipe-valued COGS and operating result.',  discounts:'Coupon codes and discount authorization need completion.', roles:'Authentication and enforceable role permissions need a secure backend.', settings:'Restaurant and branch settings need completion.' };
   const selectedLabel = moduleGroups.flatMap(group=>group.items).find(item=>item.id===view)?.label || 'Dashboard';
   const placeholder = (): ReactNode => <section className={`${panel} p-6 md:p-8`}><div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#e7b943]/10 text-[#e7b943]"><Activity size={21}/></div><div className="mt-5">{heading('Module status',selectedLabel,'This module is listed for the complete product scope.')}</div><p className="mt-4 max-w-2xl text-sm leading-6 text-slate-400">{moduleMessages[view] || 'This module is planned but is not part of the current working demo.'}</p><div className="mt-6 rounded-xl border border-amber-300/15 bg-amber-300/[.04] p-4 text-xs leading-5 text-amber-100/70">This screen is intentionally marked as incomplete—no demo action or placeholder value is presented as a completed workflow.</div><button onClick={()=>setView('dashboard')} className="mt-5 rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-300 hover:border-white/20">Back to dashboard</button></section>;
-  const discountsView = (): ReactNode => <section className={`${panel} p-5`}>\n    <div className="mb-5">{heading('Promotions','Discounts & coupons','Create branch-specific percentage or fixed-value coupons. Coupon use is validated again during checkout.')}</div>\n    {!apiConnected ? <p className="rounded-xl border border-amber-300/15 bg-amber-300/[.04] p-4 text-sm text-amber-100/80">Connect the live backend as an owner or manager to manage coupons.</p> : <><div className="mb-5 grid gap-3 rounded-xl border border-white/[.07] bg-[#191e24] p-4 md:grid-cols-2 xl:grid-cols-4">\n      <label className="text-xs text-slate-400">Coupon code<input value={newCouponCode} onChange={event=>setNewCouponCode(event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g,''))} maxLength={32} placeholder="WELCOME10" className="field mt-1 w-full"/></label>\n      <label className="text-xs text-slate-400">Discount type<select value={newCouponType} onChange={event=>setNewCouponType(event.target.value as 'percentage'|'fixed')} className="field mt-1 w-full"><option value="percentage">Percentage (%)</option><option value="fixed">Fixed amount (SAR)</option></select></label>\n      <label className="text-xs text-slate-400">Discount value<input type="number" min="0.01" max={newCouponType==='percentage'?100:100000} value={newCouponValue} onChange={event=>setNewCouponValue(event.target.value)} className="field mt-1 w-full"/></label>\n      <label className="text-xs text-slate-400">Minimum subtotal (SAR)<input type="number" min="0" value={newCouponMin} onChange={event=>setNewCouponMin(event.target.value)} className="field mt-1 w-full"/></label>\n      <label className="text-xs text-slate-400">Maximum discount (SAR)<input type="number" min="0.01" value={newCouponMax} onChange={event=>setNewCouponMax(event.target.value)} placeholder="No cap" className="field mt-1 w-full"/></label>\n      <label className="text-xs text-slate-400">Usage limit<input type="number" min="1" value={newCouponLimit} onChange={event=>setNewCouponLimit(event.target.value)} placeholder="Unlimited" className="field mt-1 w-full"/></label>\n      <label className="text-xs text-slate-400">Expiry (optional)<input type="datetime-local" value={newCouponExpiry} onChange={event=>setNewCouponExpiry(event.target.value)} className="field mt-1 w-full"/></label>\n      <div className="flex items-end"><button onClick={()=>void createCoupon()} className="w-full rounded-xl bg-[#e7b943] px-4 py-2.5 text-sm font-semibold text-[#17130b]">Create coupon</button></div>\n    </div><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="text-[11px] uppercase tracking-wider text-slate-500"><tr><th className="pb-3">Code</th><th className="pb-3">Discount</th><th className="pb-3">Minimum</th><th className="pb-3">Usage</th><th className="pb-3">Expires</th><th className="pb-3">Status</th><th/></tr></thead><tbody>{discountCoupons.map(coupon=><tr key={coupon.id} className="border-t border-white/[.06]"><td className="py-3 font-semibold text-white">{coupon.code}</td><td className="py-3 text-slate-300">{coupon.discountType==='percentage'?coupon.discountValue+'%':currency(Number(coupon.discountValue))}</td><td className="py-3 text-slate-400">{currency(Number(coupon.minSubtotal))}</td><td className="py-3 text-slate-400">{coupon.usedCount}{coupon.usageLimit===null?' / ∞':' / '+coupon.usageLimit}</td><td className="py-3 text-slate-400">{coupon.expiresAt?new Date(coupon.expiresAt).toLocaleString():'Never'}</td><td className="py-3"><span className={coupon.active?'text-emerald-300':'text-slate-500'}>{coupon.active?'Active':'Inactive'}</span></td><td className="py-3 text-right"><button onClick={()=>void toggleCoupon(coupon)} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300">{coupon.active?'Deactivate':'Activate'}</button></td></tr>)}</tbody></table></div>{!discountCoupons.length&&<p className="py-10 text-center text-sm text-slate-500">No coupons created for this branch.</p>}</>}\n  </section>;\n  const restrictedHrView = (): ReactNode => <section className={`${panel} p-6`}>{heading('Access','Restricted','Your role does not have access to employee, attendance or payroll records.')}</section>;
+  const discountsView = (): ReactNode => <section className={`${panel} p-5`}>
+    <div className="mb-5">{heading('Promotions','Discounts & coupons','Create branch-specific percentage or fixed-value coupons. Coupon use is validated again during checkout.')}</div>
+    {!apiConnected ? <p className="rounded-xl border border-amber-300/15 bg-amber-300/[.04] p-4 text-sm text-amber-100/80">Connect the live backend as an owner or manager to manage coupons.</p> : <><div className="mb-5 grid gap-3 rounded-xl border border-white/[.07] bg-[#191e24] p-4 md:grid-cols-2 xl:grid-cols-4">
+      <label className="text-xs text-slate-400">Coupon code<input value={newCouponCode} onChange={event=>setNewCouponCode(event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g,''))} maxLength={32} placeholder="WELCOME10" className="field mt-1 w-full"/></label>
+      <label className="text-xs text-slate-400">Discount type<select value={newCouponType} onChange={event=>setNewCouponType(event.target.value as 'percentage'|'fixed')} className="field mt-1 w-full"><option value="percentage">Percentage (%)</option><option value="fixed">Fixed amount (SAR)</option></select></label>
+      <label className="text-xs text-slate-400">Discount value<input type="number" min="0.01" max={newCouponType==='percentage'?100:100000} value={newCouponValue} onChange={event=>setNewCouponValue(event.target.value)} className="field mt-1 w-full"/></label>
+      <label className="text-xs text-slate-400">Minimum subtotal (SAR)<input type="number" min="0" value={newCouponMin} onChange={event=>setNewCouponMin(event.target.value)} className="field mt-1 w-full"/></label>
+      <label className="text-xs text-slate-400">Maximum discount (SAR)<input type="number" min="0.01" value={newCouponMax} onChange={event=>setNewCouponMax(event.target.value)} placeholder="No cap" className="field mt-1 w-full"/></label>
+      <label className="text-xs text-slate-400">Usage limit<input type="number" min="1" value={newCouponLimit} onChange={event=>setNewCouponLimit(event.target.value)} placeholder="Unlimited" className="field mt-1 w-full"/></label>
+      <label className="text-xs text-slate-400">Expiry (optional)<input type="datetime-local" value={newCouponExpiry} onChange={event=>setNewCouponExpiry(event.target.value)} className="field mt-1 w-full"/></label>
+      <div className="flex items-end"><button onClick={()=>void createCoupon()} className="w-full rounded-xl bg-[#e7b943] px-4 py-2.5 text-sm font-semibold text-[#17130b]">Create coupon</button></div>
+    </div><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="text-[11px] uppercase tracking-wider text-slate-500"><tr><th className="pb-3">Code</th><th className="pb-3">Discount</th><th className="pb-3">Minimum</th><th className="pb-3">Usage</th><th className="pb-3">Expires</th><th className="pb-3">Status</th><th/></tr></thead><tbody>{discountCoupons.map(coupon=><tr key={coupon.id} className="border-t border-white/[.06]"><td className="py-3 font-semibold text-white">{coupon.code}</td><td className="py-3 text-slate-300">{coupon.discountType==='percentage'?coupon.discountValue+'%':currency(Number(coupon.discountValue))}</td><td className="py-3 text-slate-400">{currency(Number(coupon.minSubtotal))}</td><td className="py-3 text-slate-400">{coupon.usedCount}{coupon.usageLimit===null?' / ∞':' / '+coupon.usageLimit}</td><td className="py-3 text-slate-400">{coupon.expiresAt?new Date(coupon.expiresAt).toLocaleString():'Never'}</td><td className="py-3"><span className={coupon.active?'text-emerald-300':'text-slate-500'}>{coupon.active?'Active':'Inactive'}</span></td><td className="py-3 text-right"><button onClick={()=>void toggleCoupon(coupon)} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300">{coupon.active?'Deactivate':'Activate'}</button></td></tr>)}</tbody></table></div>{!discountCoupons.length&&<p className="py-10 text-center text-sm text-slate-500">No coupons created for this branch.</p>}</>}
+  </section>;
+  const restrictedHrView = (): ReactNode => <section className={`${panel} p-6`}>{heading('Access','Restricted','Your role does not have access to employee, attendance or payroll records.')}</section>;
   const content: Record<string,()=>ReactNode> = { dashboard, pos, orders:ordersView, kitchen, delivery:deliveryView, tables:tablesView, reservations:reservationsView, menu:menuView, categories:categoriesView, inventory:inventoryView, recipes:recipesView, suppliers:suppliersView, purchases:purchasesView, customers:customersView, employees:canViewPayroll?employeesView:restrictedHrView, attendance:canManageHr?attendanceView:restrictedHrView, payroll:canViewPayroll?payrollView:restrictedHrView, expenses:expensesView, discounts:discountsView, accounting, reports:reportsView, profit:profitView, qr, settings:apiSettings };
   const activeContent = content[view] ? content[view]() : placeholder();
 
