@@ -158,7 +158,7 @@ function App() {
     let active=true;
     fetch(apiBase.replace(/\/$/,'')+'/api/settings',{headers:{Authorization:'Bearer '+apiToken}})
       .then(async response=>{const result=await response.json();if(!response.ok||!result.settings)throw new Error(result.error||'Branch settings could not be loaded.');return result.settings;})
-      .then(settings=>{if(active){setBranchName(settings.branchName||'Musafir Fast Food');setReceiptFooter(settings.receiptFooter||'Thank you for visiting Musafir!');setKitchenAcceptanceRequired(Boolean(settings.kitchenAcceptanceRequired));}})
+      .then(settings=>{if(active){setBranchName(settings.branchName||'Musafir Fast Food');setReceiptFooter(settings.receiptFooter||'Thank you for visiting Musafir!');}})
       .catch(error=>{if(active)flash(error instanceof Error?error.message:'Branch settings could not be loaded.');});
     return ()=>{active=false;};
   },[apiConnected,apiToken,apiBase]);
@@ -804,27 +804,7 @@ function App() {
     }
   };
 
-  const changeStatus = async (id: string) => {
-    const currentOrder = orders.find(order => order.id === id);
-    if (!currentOrder) return;
-    const index = workflow.indexOf(currentOrder.status);
-    const nextStatus = workflow[Math.min(index + 1, workflow.length - 1)];
-    if (apiToken && apiConnected) {
-      try {
-        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/orders/${encodeURIComponent(id)}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiToken}` },
-          body: JSON.stringify({ status: nextStatus })
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Order status could not be updated.');
-      } catch (error) {
-        flash(error instanceof Error ? error.message : 'Could not update order status on server.');
-        return;
-      }
-    }
-    setOrders(current => current.map(order => order.id === id ? { ...order, status: nextStatus } : order));
-  };
+
   const addInventoryItem = async () => {
     const name = window.prompt('Stock item name');
     if (!name?.trim()) return;
