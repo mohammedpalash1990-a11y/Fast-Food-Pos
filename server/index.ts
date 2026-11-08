@@ -77,6 +77,59 @@ app.patch('/api/reservations/:id',authenticate,allow('owner','manager','cashier'
 app.get('/api/health',asyncRoute(async(_req,res)=>{await pool.query('SELECT 1');res.json({status:'ok',database:'connected'});}));
 app.post('/api/auth/login',authLimiter,asyncRoute(async(req,res)=>{const parsed=schema.login.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Enter a valid email and password'});const result=await pool.query('SELECT id,organization_id,branch_id,email,display_name,role,password_hash FROM users WHERE email=$1 AND active=true',[parsed.data.email.toLowerCase()]);const user=result.rows[0];if(!user||!await bcrypt.compare(parsed.data.password,user.password_hash))return res.status(401).json({error:'Email or password is incorrect'});const token=jwt.sign({sub:user.id},secret!,{expiresIn:'8h',issuer:'musafir-pos'});res.json({token,user:{id:user.id,email:user.email,displayName:user.display_name,role:user.role,organizationId:user.organization_id,branchId:user.branch_id}});}));
 app.get('/api/auth/me',authenticate,asyncRoute(async(req:AuthedRequest,res)=>res.json({user:req.user})));
+
+const staffRoleSchema=z.enum(['owner','manager','cashier','kitchen','inventory','accountant','delivery']);
+app.get('/api/users',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
+  const rows=await pool.query(`SELECT id,email,display_name AS "displayName",role,active,created_at AS "createdAt"
+    FROM users WHERE organization_id=$1 AND branch_id=$2 ORDER BY created_at,email`,
+    [req.user!.organizationId,req.user!.branchId]);
+  res.json({users:rows.rows});
+}));
+app.post('/api/users',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
+  const parsed=z.object({email:z.string().email().max(254),displayName:z.string().trim().min(2).max(100),password:z.string().min(12).max(128),role:staffRoleSchema}).strict().safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Enter a valid email, name, password (at least 12 characters), and role'});
+  const d=parsed.data;
+  if(d.role==='owner'&&req.user!.role!=='owner')return res.status(403).json({error:'Only an owner can assign the owner role'});
+  const passwordHash=await bcrypt.hash(d.password,12);
+  const user=await inTransaction(async client=>{
+    const inserted=await client.query(`INSERT INTO users(organization_id,branch_id,email,password_hash,display_name,role)
+      VALUES($1,$2,$3,$4,$5,$6)
+      ON CONFLICT(organization_id,email) DO NOTHING
+      RETURNING id,email,display_name AS "displayName",role,active,created_at AS "createdAt"`,
+      [req.user!.organizationId,req.user!.branchId,d.email.toLowerCase(),passwordHash,d.displayName,d.role]);
+    if(!inserted.rowCount)throw Object.assign(new Error('An account with this email already exists'),{status:409});
+    await audit(client,req.user!,'user.created','user',inserted.rows[0].id,{email:inserted.rows[0].email,role:d.role});
+    return inserted.rows[0];
+  });
+  res.status(201).json({user});
+}));
+app.patch('/api/users/:id',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{
+  const parsed=z.object({role:staffRoleSchema.optional(),active:z.boolean().optional(),displayName:z.string().trim().min(2).max(100).optional(),password:z.string().min(12).max(128).optional()}).strict().refine(value=>Object.keys(value).length>0).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Provide a valid role, active status, display name or new password'});
+  const d=parsed.data,userId=String(req.params.id);
+  if(userId===req.user!.id&&d.active===false)return res.status(400).json({error:'You cannot deactivate your own account'});
+  if(d.role==='owner'&&req.user!.role!=='owner')return res.status(403).json({error:'Only an owner can assign the owner role'});
+  const passwordHash=d.password?await bcrypt.hash(d.password,12):null;
+  const user=await inTransaction(async client=>{
+    const locked=await client.query('SELECT id,role,active FROM users WHERE id=$1 AND organization_id=$2 AND branch_id=$3 FOR UPDATE',[userId,req.user!.organizationId,req.user!.branchId]);
+    if(!locked.rowCount)throw Object.assign(new Error('User not found'),{status:404});
+    if(locked.rows[0].role==='owner'&&req.user!.role!=='owner')throw Object.assign(new Error('Only an owner can modify another owner'),{status:403});
+    if(locked.rows[0].role==='owner'&&(d.role&&d.role!=='owner'||d.active===false)){
+      const count=await client.query("SELECT count(*)::int AS count FROM users WHERE organization_id=$1 AND branch_id=$2 AND role='owner' AND active=true",[req.user!.organizationId,req.user!.branchId]);
+      if(count.rows[0].count<=1)throw Object.assign(new Error('The last active owner cannot be demoted or deactivated'),{status:409});
+    }
+    const updated=await client.query(`UPDATE users SET
+      role=COALESCE($1,role),active=COALESCE($2,active),display_name=COALESCE($3,display_name),
+      password_hash=COALESCE($4,password_hash)
+      WHERE id=$5 AND organization_id=$6 AND branch_id=$7
+      RETURNING id,email,display_name AS "displayName",role,active,created_at AS "createdAt"`,
+      [d.role??null,d.active??null,d.displayName??null,passwordHash,userId,req.user!.organizationId,req.user!.branchId]);
+    await audit(client,req.user!,'user.updated','user',userId,{role:d.role,active:d.active,displayName:d.displayName,passwordChanged:Boolean(passwordHash)});
+    return updated.rows[0];
+  });
+  res.json({user});
+}));
+
 const menuQuery=z.object({branchId:z.string().uuid()});
 // Public customer menu (no authentication). Only active products of the branch's
 // own organization are exposed; the payload is identical for the POS login
