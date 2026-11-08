@@ -246,7 +246,7 @@ app.post('/api/qr/orders',publicQrOrderLimiter,asyncRoute(async(req,res)=>{
     if(d.orderType==='Dine-in'){
       const table=await client.query("SELECT id,status FROM restaurant_tables WHERE branch_id=$1 AND organization_id=$2 AND table_number=$3 FOR UPDATE",[d.branchId,organizationId,d.tableNumber]);
       if(!table.rowCount)throw Object.assign(new Error('This table QR code is not valid for the selected branch'),{status:404});
-      if(!['Available','Reserved'].includes(String(table.rows[0].status)))throw Object.assign(new Error('This table is not accepting a new order right now'),{status:409});
+      if(!['Available','Reserved','Occupied'].includes(String(table.rows[0].status)))throw Object.assign(new Error('This table is not accepting a new order right now'),{status:409});
       tableId=String(table.rows[0].id);
     }
     const recipeRows=await client.query('SELECT r.product_id,r.ingredient_id,r.quantity,i.name AS ingredient_name,i.stock FROM recipes r JOIN ingredients i ON i.id=r.ingredient_id WHERE r.product_id=ANY($1::uuid[]) AND i.branch_id=$2 AND i.track_stock=true FOR UPDATE OF i',[d.items.map(item=>item.productId),d.branchId]);
