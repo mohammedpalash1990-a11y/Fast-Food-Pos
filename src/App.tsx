@@ -90,17 +90,17 @@ function App() {
   const canManageHr = ['owner', 'manager'].includes(hrRole);
   const canViewPayroll = ['owner', 'manager', 'accountant'].includes(hrRole);
 
-  useEffect(() => { save('musafir-products', products); }, [products]);
-  useEffect(() => { save('musafir-menu-categories', menuCategories); }, [menuCategories]);
-  useEffect(() => { save('musafir-inactive-products', inactiveMenuProducts); }, [inactiveMenuProducts]);
-  useEffect(() => { save('musafir-inventory', inventory); }, [inventory]);
-  useEffect(() => { save('musafir-customers', customers); }, [customers]);
-  useEffect(() => { save('musafir-orders', orders); }, [orders]);
+  useEffect(() => { if (!apiConnected) save('musafir-products', products); }, [products, apiConnected]);
+  useEffect(() => { if (!apiConnected) save('musafir-menu-categories', menuCategories); }, [menuCategories, apiConnected]);
+  useEffect(() => { if (!apiConnected) save('musafir-inactive-products', inactiveMenuProducts); }, [inactiveMenuProducts, apiConnected]);
+  useEffect(() => { if (!apiConnected) save('musafir-inventory', inventory); }, [inventory, apiConnected]);
+  useEffect(() => { if (!apiConnected) save('musafir-customers', customers); }, [customers, apiConnected]);
+  useEffect(() => { if (!apiConnected) save('musafir-orders', orders); }, [orders, apiConnected]);
   useEffect(() => { save('musafir-cart', cart); }, [cart]);
   useEffect(() => { if (!apiConnected) save('musafir-employees', employees); }, [employees, apiConnected]);
-  useEffect(() => { save('musafir-suppliers', suppliers); }, [suppliers]);
-  useEffect(() => { save('musafir-expenses', expenses); }, [expenses]);
-  useEffect(() => { save('musafir-purchases', purchases); }, [purchases]);
+  useEffect(() => { if (!apiConnected) save('musafir-suppliers', suppliers); }, [suppliers, apiConnected]);
+  useEffect(() => { if (!apiConnected) save('musafir-expenses', expenses); }, [expenses, apiConnected]);
+  useEffect(() => { if (!apiConnected) save('musafir-purchases', purchases); }, [purchases, apiConnected]);
   useEffect(() => { if (!apiConnected) save('musafir-payroll', payroll); }, [payroll, apiConnected]);
   useEffect(() => { if (!apiConnected) return; try { localStorage.removeItem('musafir-employees'); localStorage.removeItem('musafir-payroll'); } catch { /* Storage may be unavailable. */ } }, [apiConnected]);
   useEffect(() => {
@@ -113,8 +113,8 @@ function App() {
     return () => { active = false; };
   }, [apiConnected, apiToken, apiBase, view, attendanceDate, canManageHr]);
   useEffect(() => { save('musafir-audit', logs); }, [logs]);
-  useEffect(() => { save('musafir-reservations', reservations); }, [reservations]);
-  useEffect(() => { save('musafir-restaurant-tables', restaurantTables); }, [restaurantTables]);
+  useEffect(() => { if (!apiConnected) save('musafir-reservations', reservations); }, [reservations, apiConnected]);
+  useEffect(() => { if (!apiConnected) save('musafir-restaurant-tables', restaurantTables); }, [restaurantTables, apiConnected]);
 
   useEffect(() => {
     if (!apiToken || !apiBranchId || !apiBase) return;
@@ -137,7 +137,7 @@ function App() {
     const refreshLiveData = async () => {
       try {
         const headers = { Authorization: `Bearer ${apiToken}` };
-        const [ordersResponse, inventoryResponse, expensesResponse, purchasesResponse, suppliersResponse, employeesResponse, payrollResponse, reservationsResponse, tablesResponse, deliveriesResponse] = await Promise.all([
+        const [ordersResponse, inventoryResponse, expensesResponse, purchasesResponse, suppliersResponse, employeesResponse, payrollResponse, reservationsResponse, tablesResponse, deliveriesResponse, categoriesResponse, productsResponse, customersResponse] = await Promise.all([
           fetch(`${apiBase.replace(/\/$/, '')}/api/orders?limit=150`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/inventory`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/expenses`, { headers }),
@@ -147,11 +147,33 @@ function App() {
           fetch(`${apiBase.replace(/\/$/, '')}/api/payroll`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/reservations`, { headers }),
           fetch(`${apiBase.replace(/\/$/, '')}/api/tables`, { headers }),
-          fetch(`${apiBase.replace(/\/$/, '')}/api/deliveries`, { headers })
+          fetch(`${apiBase.replace(/\/$/, '')}/api/deliveries`, { headers }),
+          fetch(`${apiBase.replace(/\/$/, '')}/api/categories`, { headers }),
+          fetch(`${apiBase.replace(/\/$/, '')}/api/products`, { headers }),
+          fetch(`${apiBase.replace(/\/$/, '')}/api/customers`, { headers })
         ]);
         if (!ordersResponse.ok || !inventoryResponse.ok) return;
         const [orderData, inventoryData] = await Promise.all([ordersResponse.json(), inventoryResponse.json()]);
         if (!active || !Array.isArray(orderData.orders) || !Array.isArray(inventoryData.items)) return;
+        if (categoriesResponse.ok) {
+          const categoryData = await categoriesResponse.json();
+          if (active && Array.isArray(categoryData.categories)) setMenuCategories(categoryData.categories);
+        }
+        if (productsResponse.ok) {
+          const productData = await productsResponse.json();
+          if (active && Array.isArray(productData.products)) {
+            const mappedProducts = productData.products.map((item: {id:string;name:string;category?:string;price:string|number;imageUrl?:string;image_url?:string;active:boolean;recipe?:Array<{ingredientId:string;name:string;qty:string|number;unit:string}>}) => ({
+              id:item.id,name:item.name,category:(item.category||'Snacks') as Product['category'],price:Number(item.price),
+              image:item.imageUrl||item.image_url||'',popularity:0,recipe:(item.recipe||[]).map(ingredient=>({ingredientId:ingredient.ingredientId,name:ingredient.name,qty:Number(ingredient.qty),unit:ingredient.unit}))
+            }));
+            setProducts(mappedProducts.filter((_:Product,index:number)=>productData.products[index].active));
+            setInactiveMenuProducts(mappedProducts.filter((_:Product,index:number)=>!productData.products[index].active));
+          }
+        }
+        if (customersResponse.ok) {
+          const customerData = await customersResponse.json();
+          if (active && Array.isArray(customerData.customers)) setCustomers(customerData.customers.map((customer: {id:string;name:string;phone?:string;address?:string;loyaltyPoints?:number|string;orderCount?:number|string;lifetimeSpend?:number|string;lastOrderAt?:string|null})=>({id:customer.id,name:customer.name,phone:customer.phone||'',address:customer.address||'',loyaltyPoints:Number(customer.loyaltyPoints||0),orderCount:Number(customer.orderCount||0),lifetimeSpend:Number(customer.lifetimeSpend||0),lastOrderAt:customer.lastOrderAt||undefined,favoriteItems:[]})));
+        }
         if (expensesResponse.ok) {
           const expenseData = await expensesResponse.json();
           if (active && Array.isArray(expenseData.expenses)) setExpenses(expenseData.expenses.map((item: {id:string;date:string;category:string;description:string;amount:string|number;paymentMethod:string;createdAt:string}) => ({
