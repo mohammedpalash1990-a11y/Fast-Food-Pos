@@ -61,9 +61,10 @@ test('coupon creation, preview, checkout redemption and usage limits are enforce
   assert.equal(Number(preview.body.discount),2);
   assert.equal(Number(preview.body.total),21);
 
-  const tooSmall=await call('POST','/api/discounts/preview',{code:'SAVE10',items:[{productId:ids.product,quantity:1}]});
-  assert.equal(tooSmall.status,200);
-  assert.equal(Number(tooSmall.body.discount),2);
+  const minCoupon=await call('POST','/api/discounts',{code:'MIN30',discountType:'fixed',discountValue:5,minSubtotal:30});
+  assert.equal(minCoupon.status,201);
+  const tooSmall=await call('POST','/api/discounts/preview',{code:'MIN30',items:[{productId:ids.product,quantity:1}]});
+  assert.equal(tooSmall.status,400);
 
   const stacked=await call('POST','/api/orders',{orderType:'Takeaway',paymentMethod:'Cash',taxRate:.15,discount:1,couponCode:'SAVE10',items:[{productId:ids.product,quantity:1}]});
   assert.equal(stacked.status,400);
@@ -93,6 +94,8 @@ test('coupon administration is restricted to owner and manager roles',async()=>{
   assert.equal(create.status,403);
   const list=await call('GET','/api/discounts',undefined,cashierToken);
   assert.equal(list.status,403);
-  const preview=await call('POST','/api/discounts/preview',{code:'SAVE10',items:[{productId:ids.product,quantity:1}]},cashierToken);
-  assert.equal(preview.status,404);
+  const publicCoupon=await call('POST','/api/discounts',{code:'PUBLIC10',discountType:'percentage',discountValue:10});
+  assert.equal(publicCoupon.status,201);
+  const preview=await call('POST','/api/discounts/preview',{code:'PUBLIC10',items:[{productId:ids.product,quantity:1}]},cashierToken);
+  assert.equal(preview.status,200,JSON.stringify(preview.body));
 });
