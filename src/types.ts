@@ -2,6 +2,7 @@ export type CategoryName = 'Burgers' | 'Pizza' | 'Sandwiches' | 'Fried Chicken' 
 export type OrderType = 'Dine-in' | 'Takeaway' | 'Pickup' | 'Home Delivery';
 export type OrderStatus = 'Pending' | 'Accepted' | 'Preparing' | 'Ready' | 'Completed';
 export type PaymentMethod = 'Cash' | 'Mada';
+export interface OrderPayment { method: PaymentMethod; amount: number; }
 
 export interface IngredientUsage {
   ingredientId: string;
@@ -68,6 +69,7 @@ export interface Order {
   total: number;
   paid: number;
   paymentMethod: PaymentMethod;
+  paymentBreakdown?: OrderPayment[];
   kitchenNote?: string;
   tableNumber?: string;
 }
