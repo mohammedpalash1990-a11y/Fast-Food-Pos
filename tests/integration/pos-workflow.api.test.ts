@@ -133,7 +133,7 @@ test('split Cash and Mada payments are recorded separately and reconcile to the 
   assert.equal(result.status, 201, JSON.stringify(result.body));
   const orderId = result.body.order.id;
   const order = (await db.query('SELECT total,status FROM orders WHERE id=$1', [orderId])).rows[0];
-  const payments = await db.query("SELECT amount,method,direction FROM payments WHERE order_id=$1 AND direction='in' ORDER BY created_at,id", [orderId]);
+  const payments = await db.query("SELECT amount,method,direction FROM payments WHERE order_id=$1 AND direction='in' ORDER BY method,created_at,id", [orderId]);
   assert.equal(payments.rowCount, 2);
   assert.deepEqual(payments.rows.map(row => [Number(row.amount), row.method, row.direction]), [
     [10, 'Cash', 'in'],
@@ -145,6 +145,11 @@ test('split Cash and Mada payments are recorded separately and reconcile to the 
   const saved = summary.body.orders.find((entry: {id:string}) => entry.id === orderId);
   assert.equal(Number(saved.paid), 23);
   assert.deepEqual(saved.payment_breakdown.map((payment: {method:string;amount:string|number}) => [payment.method, Number(payment.amount)]), [['Cash', 10], ['Mada', 13]]);
+  const stockBeforeRejectedPayment = Number((await db.query('SELECT stock FROM ingredients WHERE id=$1', [ids.ingredient])).rows[0].stock);
+  const rejectedOverpayment = await createOrder('Pickup', 'Cash', { payments: [{ method: 'Cash', amount: 20 }, { method: 'Mada', amount: 10 }] });
+  assert.equal(rejectedOverpayment.status, 400);
+  const stockAfterRejectedPayment = Number((await db.query('SELECT stock FROM ingredients WHERE id=$1', [ids.ingredient])).rows[0].stock);
+  assert.equal(stockAfterRejectedPayment, stockBeforeRejectedPayment, 'rejected overpayment must roll back inventory deduction');
 });
 
 test('kitchen acceptance is optional and controls only the initial order status', async () => {
