@@ -42,6 +42,7 @@ after(async () => {
     await db.query('DELETE FROM audit_logs WHERE organization_id=$1', [ids.org]);
     await db.query('DELETE FROM purchase_payment_allocations WHERE purchase_id IN (SELECT id FROM purchases WHERE organization_id=$1)', [ids.org]);
     await db.query('DELETE FROM payments WHERE organization_id=$1', [ids.org]);
+    await db.query('DELETE FROM orders WHERE branch_id=$1', [ids.branch]);
     await db.query('DELETE FROM purchase_items WHERE purchase_id IN (SELECT id FROM purchases WHERE organization_id=$1)', [ids.org]);
     await db.query('DELETE FROM purchases WHERE organization_id=$1', [ids.org]);
     await db.query('DELETE FROM expenses WHERE organization_id=$1', [ids.org]);
@@ -83,6 +84,11 @@ test('purchase receiving, partial supplier settlement, expense recording and fin
   assert.equal(expenses.status, 200);
   assert.ok(expenses.body.expenses.some((row: any) => row.id === expense.body.expense.id));
 
+  const cancelledOrder = (await db.query(`INSERT INTO orders(organization_id,branch_id,order_number,order_type,status,subtotal,tax,discount,total,created_by)
+    VALUES($1,$2,$3,'Takeaway','Cancelled',50,0,0,50,$4) RETURNING id`, [ids.org, ids.branch, Date.now(), ids.user])).rows[0];
+  await db.query(`INSERT INTO payments(organization_id,branch_id,order_id,amount,method,direction,created_by)
+    VALUES($1,$2,$3,50,'Cash','in',$4)`, [ids.org, ids.branch, cancelledOrder.id, ids.user]);
+
   const report = await call('GET', '/api/reports/summary?from=' + today + '&to=' + today);
   assert.equal(report.status, 200, JSON.stringify(report.body));
   assert.equal(report.body.period.from, today);
@@ -91,6 +97,7 @@ test('purchase receiving, partial supplier settlement, expense recording and fin
   assert.equal(Number(report.body.purchases.paid), 30);
   assert.equal(Number(report.body.purchases.outstanding), 10);
   assert.equal(Number(report.body.purchasePayments.paid), 30);
+  assert.equal(report.body.sales.byPaymentMethod.length, 0, 'Cancelled order tender must not be counted');
   assert.equal(Number(report.body.operatingOutflow), 42.5);
 
   const invalidRange = await call('GET', '/api/reports/summary?from=2026-11-09&to=2026-11-08');
