@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Minus, Plus, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, Banknote, CheckCircle2, CreditCard, Minus, Plus, ShoppingBag } from 'lucide-react';
 
 type MenuProduct = { id:string; name:string; price:string|number; image_url?:string|null; description?:string|null; category?:string|null };
 type MenuData = { branch:{id:string;name:string;organizationName:string}; products:MenuProduct[]; categories:string[] };
@@ -23,6 +23,8 @@ export default function CustomerMenu(){
   const [notes,setNotes]=useState('');
   const [orderType,setOrderType]=useState<OrderType>(tableNumber?'Dine-in':'Pickup');
   const [submitting,setSubmitting]=useState(false);
+  const [checkout,setCheckout]=useState(false);
+  const [paymentMethod,setPaymentMethod]=useState<'Cash'|'Mada'>('Cash');
   const [checkoutKey,setCheckoutKey]=useState('');
   const [checkoutFingerprint,setCheckoutFingerprint]=useState('');
   const [success,setSuccess]=useState<{number:string|number;total:number;items:{name:string;price:number;quantity:number}[]}|null>(null);
@@ -59,7 +61,7 @@ export default function CustomerMenu(){
         address:address.trim(),
         orderType,
         ...(orderType==='Dine-in'?{tableNumber}:{}),
-        notes:notes.trim(),
+        notes:[`Payment preference: ${paymentMethod}`,notes.trim()].filter(Boolean).join(' · '),
         items:cartItems.map(item=>({productId:item.product.id,quantity:item.quantity}))
       };
       const fingerprint=JSON.stringify(payload);
@@ -140,18 +142,32 @@ export default function CustomerMenu(){
         <div className="flex items-center justify-between"><div><p className="text-[9px] font-bold uppercase tracking-[.2em] text-[#a17b22]">Your selection</p><h2 className="mt-1 font-serif text-xl text-[#18382f]">Your order</h2></div><span className="rounded-full bg-[#f0ede4] px-3 py-1.5 text-[10px] font-semibold text-[#68766e]">{itemCount} items</span></div>
         <div className="mt-4 max-h-56 space-y-3 overflow-y-auto">{cartItems.map(item=><div key={item.product.id} className="flex items-center gap-2"><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold text-[#203b32]">{item.product.name}</p><p className="text-[10px] text-[#78837d]">{money(Number(item.product.price))} each</p></div><button type="button" aria-label={'Remove one '+item.product.name} onClick={()=>setCart(current=>({...current,[item.product.id]:Math.max(0,(current[item.product.id]||0)-1)}))} className="grid h-7 w-7 place-items-center rounded-lg border border-[#e4dece] text-[#145044]"><Minus size={12}/></button><span className="w-4 text-center text-xs">{item.quantity}</span><button type="button" aria-label={'Add one '+item.product.name} onClick={()=>setCart(current=>({...current,[item.product.id]:(current[item.product.id]||0)+1}))} className="grid h-7 w-7 place-items-center rounded-lg border border-[#e4dece] text-[#145044]"><Plus size={12}/></button></div>)}</div>
         <div className="mt-4 space-y-2 border-t border-[#eee8da] pt-3 text-xs"><div className="flex justify-between"><span className="text-[#78837d]">Subtotal</span><span>{money(subtotal)}</span></div><div className="flex justify-between"><span className="text-[#78837d]">VAT (15%)</span><span>{money(tax)}</span></div><div className="flex justify-between text-sm font-bold"><span>Total</span><span className="text-[#145044]">{money(total)}</span></div></div>
-        <div className="mt-4 space-y-3 border-t border-[#eee8da] pt-4">
-          <label className="block text-[11px] font-semibold text-[#314b41]">Order type<select value={orderType} onChange={event=>setOrderType(event.target.value as OrderType)} className="mt-1 w-full rounded-lg border border-[#ded8c9] bg-[#faf9f5] px-3 py-2.5 text-xs text-[#18382f]">{tableNumber&&<option value="Dine-in">Dine-in · Table {tableNumber}</option>}<option value="Pickup">Pickup</option><option value="Home Delivery">Home Delivery</option></select></label>
-          <label className="block text-[11px] font-semibold text-[#314b41]">Your name<input value={customerName} onChange={event=>setCustomerName(event.target.value)} autoComplete="name" className="mt-1 w-full rounded-lg border border-[#ded8c9] bg-[#faf9f5] px-3 py-2.5 text-xs text-[#18382f]" placeholder="Full name"/></label>
-          <label className="block text-[11px] font-semibold text-[#314b41]">Phone number<input value={phone} onChange={event=>setPhone(event.target.value)} autoComplete="tel" className="mt-1 w-full rounded-lg border border-[#ded8c9] bg-[#faf9f5] px-3 py-2.5 text-xs text-[#18382f]" placeholder="+966…"/></label>
-          {orderType==='Home Delivery'&&<label className="block text-[11px] font-semibold text-[#314b41]">Delivery address<textarea value={address} onChange={event=>setAddress(event.target.value)} autoComplete="street-address" rows={2} className="mt-1 w-full rounded-lg border border-[#ded8c9] bg-[#faf9f5] px-3 py-2.5 text-xs text-[#18382f]" placeholder="Building, street, district"/></label>}
-          <label className="block text-[11px] font-semibold text-[#314b41]">Order note (optional)<textarea value={notes} onChange={event=>setNotes(event.target.value)} rows={2} className="mt-1 w-full rounded-lg border border-[#ded8c9] bg-[#faf9f5] px-3 py-2.5 text-xs text-[#18382f]" placeholder="No onions, extra sauce…"/></label>
-        </div>
         {error&&<p role="alert" className="mt-3 rounded-lg bg-rose-50 p-2 text-xs text-rose-700">{error}</p>}
-        <button type="button" onClick={()=>void submitOrder()} disabled={!cartItems.length||submitting||loading} className="mt-4 w-full rounded-xl bg-[#145044] py-3.5 text-xs font-bold uppercase tracking-[.1em] text-white shadow-sm transition hover:bg-[#0e3d34] disabled:opacity-40">{submitting?'Submitting…':'Place order · '+money(total)}</button>
-        <p className="mt-2 text-center text-[10px] leading-4 text-[#78837d]">No online payment is taken. Pay by Cash or Mada {orderType==='Home Delivery'?'on delivery.':'at the restaurant.'}</p>
+        <button type="button" onClick={()=>{setError('');setCheckout(true);window.scrollTo({top:0,behavior:'smooth'});}} disabled={!cartItems.length||loading} className="mt-4 w-full rounded-xl bg-[#145044] py-3.5 text-xs font-bold uppercase tracking-[.1em] text-white shadow-sm transition hover:bg-[#0e3d34] disabled:opacity-40">Continue to checkout</button>
+        <p className="mt-2 text-center text-[10px] leading-4 text-[#78837d]">Review your details and payment preference on the next page.</p>
       </aside>
-    </div>}
+    </div> : <section className="mx-auto min-h-[calc(100vh-82px)] max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
+      <button type="button" onClick={()=>setCheckout(false)} className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#ded6c6] bg-[#fffdf8] px-4 py-2.5 text-xs font-semibold text-[#314b41]"><ArrowLeft size={15}/> Back to menu</button>
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="rounded-[1.5rem] border border-[#e4dece] bg-[#fffdf8] p-5 shadow-sm sm:p-7">
+          <p className="text-[9px] font-bold uppercase tracking-[.24em] text-[#a17b22]">Final step</p><h2 className="mt-1 font-serif text-3xl text-[#18382f]">Checkout</h2><p className="mt-2 text-xs leading-5 text-[#78837d]">Add your contact details and choose how you prefer to pay at the restaurant.</p>
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <label className="block text-[11px] font-semibold text-[#314b41] sm:col-span-2">Order type<select value={orderType} onChange={event=>setOrderType(event.target.value as OrderType)} className="mt-1 w-full rounded-lg border border-[#ded8c9] bg-[#faf9f5] px-3 py-3 text-xs text-[#18382f]">{tableNumber&&<option value="Dine-in">Dine-in · Table {tableNumber}</option>}<option value="Pickup">Pickup</option><option value="Home Delivery">Home Delivery</option></select></label>
+            <label className="block text-[11px] font-semibold text-[#314b41]">Your name<input value={customerName} onChange={event=>setCustomerName(event.target.value)} autoComplete="name" className="mt-1 w-full rounded-lg border border-[#ded8c9] bg-[#faf9f5] px-3 py-3 text-xs text-[#18382f]" placeholder="Full name"/></label>
+            <label className="block text-[11px] font-semibold text-[#314b41]">Phone number<input value={phone} onChange={event=>setPhone(event.target.value)} autoComplete="tel" className="mt-1 w-full rounded-lg border border-[#ded8c9] bg-[#faf9f5] px-3 py-3 text-xs text-[#18382f]" placeholder="+966…"/></label>
+            {orderType==='Home Delivery'&&<label className="block text-[11px] font-semibold text-[#314b41] sm:col-span-2">Delivery address<textarea value={address} onChange={event=>setAddress(event.target.value)} autoComplete="street-address" rows={2} className="mt-1 w-full rounded-lg border border-[#ded8c9] bg-[#faf9f5] px-3 py-3 text-xs text-[#18382f]" placeholder="Building, street, district"/></label>}
+            <label className="block text-[11px] font-semibold text-[#314b41] sm:col-span-2">Order note (optional)<textarea value={notes} onChange={event=>setNotes(event.target.value)} rows={2} className="mt-1 w-full rounded-lg border border-[#ded8c9] bg-[#faf9f5] px-3 py-3 text-xs text-[#18382f]" placeholder="No onions, extra sauce…"/></label>
+          </div>
+          <div className="mt-7"><p className="text-[11px] font-bold text-[#314b41]">Choose payment method</p><div className="mt-3 grid grid-cols-2 gap-3">
+            <button type="button" onClick={()=>setPaymentMethod('Cash')} aria-pressed={paymentMethod==='Cash'} className={'flex items-center gap-3 rounded-xl border p-4 text-left transition '+(paymentMethod==='Cash'?'border-[#145044] bg-[#edf4ed] ring-1 ring-[#145044]':'border-[#ded8c9] bg-[#faf9f5]')}><Banknote size={20}/><span><strong className="block text-xs text-[#18382f]">Cash</strong><small className="text-[10px] text-[#78837d]">Pay at counter / on delivery</small></span></button>
+            <button type="button" onClick={()=>setPaymentMethod('Mada')} aria-pressed={paymentMethod==='Mada'} className={'flex items-center gap-3 rounded-xl border p-4 text-left transition '+(paymentMethod==='Mada'?'border-[#145044] bg-[#edf4ed] ring-1 ring-[#145044]':'border-[#ded8c9] bg-[#faf9f5]')}><CreditCard size={20}/><span><strong className="block text-xs text-[#18382f]">Mada</strong><small className="text-[10px] text-[#78837d]">Pay at counter / on delivery</small></span></button>
+          </div><p className="mt-2 text-[10px] leading-4 text-[#78837d]">This records your preference only. No online payment is charged; staff collect Cash or Mada and complete payment in the POS.</p></div>
+          {error&&<p role="alert" className="mt-4 rounded-lg bg-rose-50 p-3 text-xs text-rose-700">{error}</p>}
+          <button type="button" onClick={()=>void submitOrder()} disabled={!cartItems.length||submitting||loading} className="mt-5 w-full rounded-xl bg-[#145044] py-4 text-xs font-bold uppercase tracking-[.1em] text-white shadow-sm transition hover:bg-[#0e3d34] disabled:opacity-40">{submitting?'Submitting…':'Confirm order · '+money(total)}</button>
+        </div>
+        <aside className="h-fit rounded-[1.5rem] border border-[#e4dece] bg-[#fffdf8] p-5 shadow-sm lg:sticky lg:top-24"><p className="text-[9px] font-bold uppercase tracking-[.2em] text-[#a17b22]">Order summary</p><h3 className="mt-1 font-serif text-xl text-[#18382f]">{itemCount} items</h3><div className="mt-4 space-y-3 border-b border-[#eee8da] pb-4">{cartItems.map(item=><div key={item.product.id} className="flex justify-between gap-3 text-xs"><span className="min-w-0 text-[#52645b]">{item.quantity} × {item.product.name}</span><strong className="shrink-0 text-[#203b32]">{money(Number(item.product.price)*item.quantity)}</strong></div>)}</div><div className="mt-4 space-y-2 text-xs"><div className="flex justify-between"><span className="text-[#78837d]">Subtotal</span><span>{money(subtotal)}</span></div><div className="flex justify-between"><span className="text-[#78837d]">VAT (15%)</span><span>{money(tax)}</span></div><div className="flex justify-between text-sm font-bold"><span>Total</span><span className="text-[#145044]">{money(total)}</span></div></div><p className="mt-4 rounded-lg bg-[#f0ede4] p-3 text-[10px] leading-4 text-[#68766e]">Selected payment: <strong>{paymentMethod}</strong></p></aside>
+      </div>
+    </section>}
 
     <footer className="mx-auto max-w-6xl px-4 pb-8 pt-3 text-center text-[10px] text-[#8b9086]">Powered by Musafir Fast Food · Prices in SAR · VAT 15%</footer>
   </main>;
