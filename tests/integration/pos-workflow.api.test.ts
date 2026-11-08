@@ -152,7 +152,7 @@ test('split Cash and Mada payments are recorded separately and reconcile to the 
   assert.equal(stockAfterRejectedPayment, stockBeforeRejectedPayment, 'rejected overpayment must roll back inventory deduction');
 });
 
-test('kitchen acceptance is optional and controls only the initial order status', async () => {
+test('POS orders are immediately completed regardless of the legacy kitchen acceptance setting', async () => {
   const defaults = await call('GET', '/api/settings');
   assert.equal(defaults.status, 200);
   assert.equal(defaults.body.settings.kitchenAcceptanceRequired, false);
@@ -169,7 +169,7 @@ test('kitchen acceptance is optional and controls only the initial order status'
   const queued = await createOrder('Pickup', 'Cash');
   assert.equal(queued.status, 201, JSON.stringify(queued.body));
   const queuedStatus = await db.query('SELECT status FROM orders WHERE id=$1', [queued.body.order.id]);
-  assert.equal(queuedStatus.rows[0].status, 'Pending');
+  assert.equal(queuedStatus.rows[0].status, 'Completed');
 
   const disabled = await call('PATCH', '/api/settings', { kitchenAcceptanceRequired: false });
   assert.equal(disabled.status, 200);
