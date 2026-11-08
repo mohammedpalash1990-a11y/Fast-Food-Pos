@@ -6,6 +6,7 @@ if (process.env.NODE_ENV === 'production') {
   const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
   const restaurantName = process.env.BOOTSTRAP_RESTAURANT_NAME?.trim() || 'Musafir Fast Food';
   const branchName = process.env.BOOTSTRAP_BRANCH_NAME?.trim() || 'Main Branch';
+  const jwtSecret = process.env.JWT_SECRET;
   if (!email || !password) {
     console.log('Production bootstrap skipped: set BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD to create the first owner account.');
     await pool.end();
@@ -17,6 +18,9 @@ if (process.env.NODE_ENV === 'production') {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Serialize first-run attempts across processes before checking or creating
+    // the organization, branch, and initial owner.
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['musafir-production-owner-bootstrap']);
     const slug = 'musafir-production';
     let org = await client.query<{id:string}>('SELECT id FROM organizations WHERE slug=$1 FOR UPDATE', [slug]);
     if (!org.rowCount) org = await client.query('INSERT INTO organizations(name,slug) VALUES($1,$2) RETURNING id', [restaurantName,slug]);
@@ -24,11 +28,14 @@ if (process.env.NODE_ENV === 'production') {
     let branch = await client.query<{id:string}>('SELECT id FROM branches WHERE organization_id=$1 ORDER BY created_at LIMIT 1 FOR UPDATE', [organizationId]);
     if (!branch.rowCount) branch = await client.query('INSERT INTO branches(organization_id,name,code) VALUES($1,$2,$3) RETURNING id', [organizationId,branchName,'KSA-01']);
     const branchId = branch.rows[0].id;
-    const existing = await client.query<{id:string}>('SELECT id FROM users WHERE organization_id=$1 AND email=$2', [organizationId,email]);
+    const existing = await client.query<{id:string;role:string}>('SELECT id,role FROM users WHERE organization_id=$1 AND lower(email)=lower($2) FOR UPDATE', [organizationId,email]);
+    if (existing.rowCount && existing.rows[0].role !== 'owner') {
+      throw new Error('The bootstrap email is already assigned to a non-owner account; use a dedicated owner email.');
+    }
     if (!existing.rowCount) {
       const hash = await bcrypt.hash(password, 12);
       await client.query("INSERT INTO users(organization_id,branch_id,email,password_hash,display_name,role) VALUES($1,$2,$3,$4,$5,'owner')", [organizationId,branchId,email,hash,'Restaurant Owner']);
-      console.log('Production owner account created for ' + email + '.');
+      console.log('Production owner account created.');
     } else {
       console.log('Production owner account already exists; password was not changed.');
     }
