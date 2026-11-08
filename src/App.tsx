@@ -350,7 +350,7 @@ function App() {
   const tax = Number((subtotal * 0.15).toFixed(2));
   const currentCartFingerprint = JSON.stringify(cart.map(item=>({productId:item.productId,quantity:item.qty})));
   const couponIsCurrent = Boolean(couponPreview && couponPreview.fingerprint===currentCartFingerprint);
-  const discountAmount = couponIsCurrent ? couponPreview!.discount : (subtotal + tax) * Math.max(0, Math.min(100, Number(discount) || 0)) / 100;
+  const discountAmount = Number((couponIsCurrent ? couponPreview!.discount : (subtotal + tax) * Math.max(0, Math.min(100, Number(discount) || 0)) / 100).toFixed(2));
   const total = Number(Math.max(0, subtotal + tax - discountAmount).toFixed(2));
   const paid = total;
   const splitCashAmount = Number((Number(cashPaymentAmount) || 0).toFixed(2));
