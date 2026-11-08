@@ -4,6 +4,7 @@ import { categories, demoAuditLogs, demoCustomers, demoEmployees, demoInventory,
 import { type CartItem, type Customer, type Employee, type InventoryItem, type Order, type OrderStatus, type PaymentMethod, type Product, type Supplier } from './types';
 import { fetchProfitAndLoss, fetchSalesReport, type ProfitAndLossReport, type SalesReport } from './api/reports';
 import { buildMenuShareUrl } from './menu/menu-model';
+import CustomerMenu from './menu/CustomerMenu';
 
 const currency = (amount: number) => `SAR ${amount.toLocaleString('en-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const localDate = (date = new Date()) => [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
@@ -55,6 +56,7 @@ function App() {
   const [category, setCategory] = useState('All');
   const [search, setSearch] = useState('');
   const [orderType, setOrderType] = useState<Order['type']>('Dine-in');
+  const [orderPanelTab, setOrderPanelTab] = useState<'live'|'qr'>('live');
   const [selectedTableId, setSelectedTableId] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
