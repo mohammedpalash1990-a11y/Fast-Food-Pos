@@ -3,7 +3,7 @@ import {
   formatSar, menuApiPath, normaliseMenuPayload, parseMenuQuery, type PublicMenuView
 } from './menu-model';
 
-const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\\/$/, '');
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 const BRAND = 'MUSAFIR';
 
 type LoadState = { status: 'loading' } | { status: 'ready'; menu: PublicMenuView } | { status: 'error'; message: string };
@@ -202,8 +202,8 @@ export default function PublicMenu() {
             ) : (
               <div className="space-y-10">
                 {visibleSections.map(section => (
-                  <section key={section.title} aria-labelledby={`section-${section.title.replace(/\\s+/g, '-').toLowerCase()}`}>
-                    {(!activeCategory || search.trim()) && <div className="mb-4 flex items-center gap-3"><h3 id={`section-${section.title.replace(/\\s+/g, '-').toLowerCase()}`} className="font-serif text-xl">{section.title}</h3><span className="h-px flex-1 bg-[#dfd6c7]" /><span className="text-[10px] text-[#928979]">{section.items.length}</span></div>}
+                  <section key={section.title} aria-labelledby={`section-${section.title.replace(/\s+/g, '-').toLowerCase()}`}>
+                    {(!activeCategory || search.trim()) && <div className="mb-4 flex items-center gap-3"><h3 id={`section-${section.title.replace(/\s+/g, '-').toLowerCase()}`} className="font-serif text-xl">{section.title}</h3><span className="h-px flex-1 bg-[#dfd6c7]" /><span className="text-[10px] text-[#928979]">{section.items.length}</span></div>}
                     <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{section.items.map(item => <ProductCard key={item.id} item={item} />)}</div>
                   </section>
                 ))}
