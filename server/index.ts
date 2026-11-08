@@ -267,8 +267,9 @@ app.get('/api/reports/summary',authenticate,allow('owner','manager','accountant'
       COALESCE(SUM(tax) FILTER(WHERE status<>'Cancelled'),0) AS tax,
       COALESCE(SUM(discount) FILTER(WHERE status<>'Cancelled'),0) AS discounts
       FROM orders WHERE organization_id=$1 AND branch_id=$2 AND created_at >= $3::date AND created_at < ($4::date + interval '1 day')`,scope),
-    pool.query(`SELECT method,COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS amount
-      FROM payments WHERE organization_id=$1 AND branch_id=$2 AND order_id IS NOT NULL AND created_at >= $3::date AND created_at < ($4::date + interval '1 day') GROUP BY method ORDER BY method`,scope),
+    pool.query(`SELECT p.method,COALESCE(SUM(CASE WHEN p.direction='in' THEN p.amount ELSE -p.amount END),0) AS amount
+      FROM payments p JOIN orders o ON o.id=p.order_id AND o.organization_id=$1 AND o.branch_id=$2 AND o.status<>'Cancelled'
+      WHERE p.organization_id=$1 AND p.branch_id=$2 AND p.order_id IS NOT NULL AND p.created_at >= $3::date AND p.created_at < ($4::date + interval '1 day') GROUP BY p.method ORDER BY p.method`,scope),
     pool.query(`SELECT order_type AS type,COUNT(*)::int AS orders,COALESCE(SUM(total),0) AS revenue
       FROM orders WHERE organization_id=$1 AND branch_id=$2 AND status<>'Cancelled' AND created_at >= $3::date AND created_at < ($4::date + interval '1 day') GROUP BY order_type ORDER BY order_type`,scope),
     pool.query(`SELECT created_at::date::text AS date,COUNT(*) FILTER(WHERE status<>'Cancelled')::int AS orders,
