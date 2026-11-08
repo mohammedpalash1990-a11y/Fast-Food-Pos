@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
@@ -152,7 +154,7 @@ app.get('/api/menu/qr',publicMenuLimiter,asyncRoute(async(req,res)=>{
   if(!parsed.success)return res.status(400).json({error:'A valid branchId is required'});
   const branch=await pool.query('SELECT id,code FROM branches WHERE id=$1',[parsed.data.branchId]);
   if(!branch.rowCount)return res.status(404).json({error:'Branch not found'});
-  const base=(process.env.PUBLIC_MENU_BASE_URL||'http://localhost:5173/menu').replace(/\/$/,'');
+  const base=(process.env.PUBLIC_MENU_BASE_URL||`${req.protocol}://${req.get('host')}/menu`).replace(/\/$/,'');
   const params=new URLSearchParams({branch:branch.rows[0].id});
   const table=String(req.query.table||'').trim().slice(0,24);
   if(table)params.set('table',table);
@@ -347,5 +349,8 @@ app.patch('/api/deliveries/:id/status',authenticate,allow('owner','manager','cas
 }));
 registerHrRoutes(app,{pool,inTransaction,authenticate,allow,asyncRoute,audit});
 registerReportRoutes(app,{pool,authenticate,allow,asyncRoute});
+const frontendDist=resolve(dirname(fileURLToPath(import.meta.url)),'../dist');
+app.use(express.static(frontendDist,{index:false}));
+app.get('/menu',(req,res,next)=>res.sendFile(resolve(frontendDist,'menu.html'),error=>{if(error)next(error);}));
 app.use((error:Error&{status?:number},_req:Request,res:Response,_next:NextFunction)=>{console.error(error);res.status(error.status||500).json({error:error.status?error.message:'Internal server error'});});
 const port=Number(process.env.PORT||3001);app.listen(port,()=>console.log(`Musafir API listening on ${port}`));
