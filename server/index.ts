@@ -273,6 +273,7 @@ app.post('/api/qr/orders',publicQrOrderLimiter,asyncRoute(async(req,res)=>{
       customerId=String(inserted.rows[0].id);
     }
     await client.query('UPDATE orders SET customer_id=$1 WHERE id=$2',[customerId,created.rows[0].id]);
+    if(d.orderType==='Home Delivery')await client.query("INSERT INTO deliveries(organization_id,branch_id,order_id,status,delivery_address,delivery_note) VALUES($1,$2,$3,'Pending',$4,$5) ON CONFLICT(order_id) DO NOTHING",[organizationId,d.branchId,created.rows[0].id,d.address,d.notes]);
     if(tableId)await client.query("UPDATE restaurant_tables SET status='Occupied',updated_at=now() WHERE id=$1 AND branch_id=$2",[tableId,d.branchId]);
     for(const {line,recipe,product} of cooked){
       await client.query('INSERT INTO order_items(order_id,product_id,product_name,quantity,unit_price,line_total) VALUES($1,$2,$3,$4,$5,$6)',[created.rows[0].id,product.id,product.name,line.quantity,product.price,Number((Number(product.price)*line.quantity).toFixed(2))]);
