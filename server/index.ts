@@ -185,14 +185,15 @@ app.post('/api/discounts/preview',authenticate,allow('owner','manager','cashier'
   const products=await pool.query('SELECT id,price FROM products WHERE organization_id=$1 AND active=true AND id=ANY($2::uuid[])',[req.user!.organizationId,parsed.data.items.map(item=>item.productId)]);
   if(products.rowCount!==new Set(parsed.data.items.map(item=>item.productId)).size)return res.status(400).json({error:'One or more menu items are unavailable'});
   const byId=new Map(products.rows.map(row=>[String(row.id),Number(row.price)]));
-  const subtotal=parsed.data.items.reduce((sum,item)=>sum+(byId.get(item.productId)||0)*item.quantity,0);
+  const subtotal=Number(parsed.data.items.reduce((sum,item)=>sum+(byId.get(item.productId)||0)*item.quantity,0).toFixed(2));
   const result=await pool.query(`SELECT discount_type,discount_value,min_subtotal,max_discount,usage_limit,used_count
     FROM discount_coupons WHERE organization_id=$1 AND branch_id=$2 AND code=$3 AND active=true
     AND (starts_at IS NULL OR starts_at<=now()) AND (expires_at IS NULL OR expires_at>now()) AND (usage_limit IS NULL OR used_count<usage_limit)`,
     [req.user!.organizationId,req.user!.branchId,parsed.data.code.toUpperCase()]);
   if(!result.rowCount)return res.status(404).json({error:'Coupon is invalid, expired, inactive or fully redeemed'});
-  const discount=couponDiscount(result.rows[0],subtotal);
-  res.json({code:parsed.data.code.toUpperCase(),subtotal,discount,tax:subtotal*.15,total:Math.max(0,subtotal*1.15-discount)});
+  const discount=Number(couponDiscount(result.rows[0],subtotal).toFixed(2));
+  const tax=Number((subtotal*.15).toFixed(2));
+  res.json({code:parsed.data.code.toUpperCase(),subtotal,discount,tax,total:Number(Math.max(0,subtotal+tax-discount).toFixed(2))});
 }));
 \napp.get('/api/categories',authenticate,asyncRoute(async(req:AuthedRequest,res)=>{const rows=await pool.query('SELECT c.id,c.name,COUNT(p.id)::int AS product_count FROM categories c LEFT JOIN products p ON p.category_id=c.id AND p.active=true WHERE c.organization_id=$1 GROUP BY c.id ORDER BY c.name',[req.user!.organizationId]);res.json({categories:rows.rows});}));
 app.post('/api/categories',authenticate,allow('owner','manager'),asyncRoute(async(req:AuthedRequest,res)=>{const parsed=schema.category.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Enter a category name'});const result=await inTransaction(async client=>{const exists=await client.query('SELECT id FROM categories WHERE organization_id=$1 AND lower(name)=lower($2)',[req.user!.organizationId,parsed.data.name]);if(exists.rowCount)throw Object.assign(new Error('Category already exists'),{status:409});const inserted=await client.query('INSERT INTO categories(organization_id,name) VALUES($1,$2) RETURNING id,name',[req.user!.organizationId,parsed.data.name]);await audit(client,req.user!,'category.created','category',inserted.rows[0].id,parsed.data);return inserted.rows[0];});res.status(201).json({category:result});}));
