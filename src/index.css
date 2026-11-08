@@ -42,3 +42,40 @@ img { display: block; max-width: 100%; }
 .musafir-pos .text-\[\\#e7b943\] { color: #946f19 !important; }
 .musafir-pos button:focus-visible { outline-color: #c99b2e; }
 @media (min-width: 1536px) { .musafir-pos { align-items: start; } }
+
+/* Responsive POS layout: fit each viewport without horizontal scrolling. */
+.musafir-pos,
+.musafir-pos > section,
+.musafir-pos > aside { min-width: 0; max-width: 100%; }
+.musafir-pos { width: 100%; grid-template-columns: minmax(0, 1fr); }
+.musafir-pos .musafir-surface { min-width: 0; }
+.musafir-pos input,
+.musafir-pos select,
+.musafir-pos textarea { min-width: 0; max-width: 100%; }
+.musafir-pos img { max-width: 100%; }
+@media (min-width: 768px) and (max-width: 1535px) {
+  .musafir-pos { grid-template-columns: minmax(0, 1fr) minmax(290px, 360px); align-items: start; }
+  .musafir-pos > aside:last-child { grid-column: 1 / -1; min-height: 300px; max-height: 420px; }
+}
+@media (min-width: 1536px) {
+  .musafir-pos { grid-template-columns: minmax(0, 1.12fr) minmax(330px, .9fr) minmax(290px, .82fr); align-items: stretch; }
+  .musafir-pos > aside:last-child { grid-column: auto; max-height: min(78vh, 860px); }
+}
+@media (max-width: 767px) {
+  .musafir-pos { gap: 12px; }
+  .musafir-pos > section,
+  .musafir-pos > aside { padding: 12px !important; border-radius: 14px; }
+  .musafir-pos > section > div:first-child { align-items: flex-start; }
+  .musafir-pos > section > div:first-child > div:last-child { max-width: 100%; flex-wrap: wrap; }
+  .musafir-pos > section .grid.grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .musafir-pos > section .grid.grid-cols-2.sm\\:grid-cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .musafir-pos > aside .max-h-\\[34vh\\] { max-height: 32vh; }
+  .musafir-pos > aside:last-child { min-height: 280px; max-height: 55vh; }
+  .musafir-pos button { touch-action: manipulation; }
+}
+@media (max-width: 380px) {
+  .musafir-pos > section,
+  .musafir-pos > aside { padding: 10px !important; }
+  .musafir-pos > section .grid.grid-cols-2 { gap: 7px; }
+  .musafir-pos > section button { overflow-wrap: anywhere; }
+}
