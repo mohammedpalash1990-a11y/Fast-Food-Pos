@@ -34,7 +34,7 @@ test('theme apply and reset persist the actual Modern Ivory default', () => {
 });
 
 test('global theme tokens and responsive POS theme rules remain present', () => {
-  assert.match(app, /className=\{\`theme-shell/);
+  assert.ok(app.includes('className={`theme-shell'));
   assert.match(css, /\.theme-shell\.theme-light/);
   assert.match(css, /var\(--theme-surface\)/);
   assert.match(css, /var\(--theme-accent\)/);
