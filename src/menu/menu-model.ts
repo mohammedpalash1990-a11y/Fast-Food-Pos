@@ -72,7 +72,7 @@ export function menuApiPath(branchId: string): string {
 
 /** Absolute link a printed QR code should point at. */
 export function buildMenuShareUrl(origin: string, branchId: string, table?: string | null): string {
-  const base = origin.replace(/\/$/, '') + '/menu';
+  const base = origin.replace(/\/$/, '') + '/menu.html';
   const params = new URLSearchParams({ branch: branchId });
   if (table) params.set('table', table);
   return base + '?' + params.toString();
