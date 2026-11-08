@@ -213,7 +213,7 @@ app.get('/api/orders',authenticate,allow('owner','manager','cashier','kitchen','
     COALESCE(c.name,'Walk-in Guest') AS customer_name,
     GREATEST(0,COALESCE((SELECT SUM(CASE WHEN p.direction='in' THEN p.amount ELSE -p.amount END) FROM payments p WHERE p.order_id=o.id),0)) AS paid,
     COALESCE((SELECT p.method FROM payments p WHERE p.order_id=o.id AND p.direction='in' ORDER BY p.created_at DESC LIMIT 1),'Cash') AS payment_method,
-    COALESCE((SELECT json_agg(json_build_object('method',p.method,'amount',p.amount) ORDER BY p.created_at,p.id) FROM payments p WHERE p.order_id=o.id AND p.direction='in'),'[]'::json) AS payment_breakdown,
+    COALESCE((SELECT json_agg(json_build_object('method',p.method,'amount',p.amount) ORDER BY p.method,p.created_at,p.id) FROM payments p WHERE p.order_id=o.id AND p.direction='in'),'[]'::json) AS payment_breakdown,
     COALESCE((SELECT json_agg(json_build_object('id',oi.id,'productId',oi.product_id,'name',oi.product_name,'qty',oi.quantity,'unitPrice',oi.unit_price,'lineTotal',oi.line_total) ORDER BY oi.id) FROM order_items oi WHERE oi.order_id=o.id),'[]'::json) AS items
     FROM orders o LEFT JOIN customers c ON c.id=o.customer_id
     LEFT JOIN restaurant_tables t ON t.id=o.table_id AND t.branch_id=o.branch_id
