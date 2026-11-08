@@ -99,8 +99,8 @@ export default function CustomerMenu(){
           <div aria-hidden="true" className="pointer-events-none absolute -left-20 -bottom-36 h-72 w-72 rounded-full border border-[#d8b66b]/15"/>
           <div className="relative mx-auto grid h-16 w-16 place-items-center rounded-full border border-[#d8b66b]/50 bg-[#d8b66b]/10"><CheckCircle2 size={34} className="text-[#e8ca87]"/></div>
           <p className="relative mt-6 text-[10px] font-bold uppercase tracking-[.3em] text-[#d8b66b]">Thank you · Musafir</p>
-          <h2 className="relative mt-3 font-serif text-4xl font-medium tracking-tight sm:text-5xl">Order completed.</h2>
-          <p className="relative mx-auto mt-3 max-w-md text-sm leading-6 text-[#d4d0c4]">Your order has been received successfully. We have saved the order with the restaurant.</p>
+          <h2 className="relative mt-3 font-serif text-4xl font-medium tracking-tight sm:text-5xl">Order received.</h2>
+          <p className="relative mx-auto mt-3 max-w-md text-sm leading-6 text-[#d4d0c4]">Your order has been sent to the restaurant. Pay by Cash or Mada when restaurant staff serves you or delivers your order.</p>
           <div className="relative mx-auto mt-7 inline-flex items-center gap-3 rounded-full border border-[#d8b66b]/35 bg-white/5 px-5 py-2.5">
             <span className="text-[9px] uppercase tracking-[.2em] text-[#c7b99a]">Order number</span><strong className="font-serif text-xl text-[#f2d99e]">#{success.number}</strong>
           </div>
@@ -108,7 +108,7 @@ export default function CustomerMenu(){
         <div className="px-6 py-7 sm:px-12 sm:py-9">
           <div className="flex items-end justify-between border-b border-[#e8e1d4] pb-4"><div><p className="text-[9px] font-bold uppercase tracking-[.22em] text-[#a17b22]">Order summary</p><p className="mt-1 text-sm font-semibold text-[#18382f]">{menu?.branch.name||'Musafir Fast Food'}</p><p className="mt-1 text-[11px] text-[#78837d]">{orderType}{orderType==='Dine-in'&&tableNumber?' · Table '+tableNumber:''}</p></div><strong className="font-serif text-2xl text-[#145044]">{money(success.total)}</strong></div>
           <div className="mt-5 space-y-3 border-b border-[#e8e1d4] pb-5">{success.items.map((item,index)=><div key={index} className="flex items-center justify-between gap-4 text-xs"><span className="min-w-0 text-[#52645b]">{item.quantity} × {item.name}</span><strong className="shrink-0 text-[#203b32]">{money(item.price*item.quantity)}</strong></div>)}</div>
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-[#78837d]"><span>Payment: Cash or Mada</span><span>VAT included · 15%</span></div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-[#78837d]"><span>Payment at restaurant: Cash or Mada</span><span>VAT included · 15%</span></div>
           <div className="mt-7 grid gap-3 sm:grid-cols-2">
             <button type="button" onClick={()=>window.print()} className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#c6a66b] bg-[#fffdf8] px-5 py-3.5 text-xs font-bold uppercase tracking-[.12em] text-[#18382f] transition hover:bg-[#f4f0e7]"><span aria-hidden="true">▤</span> Print receipt</button>
             <button type="button" onClick={()=>{setSuccess(null);setCustomerName('');setPhone('');setAddress('');setNotes('');setError('');}} className="rounded-xl bg-[#145044] px-5 py-3.5 text-xs font-bold uppercase tracking-[.12em] text-white transition hover:bg-[#0e3d34]">Back to menu</button>
