@@ -115,8 +115,8 @@ app.patch('/api/users/:id',authenticate,allow('owner','manager'),asyncRoute(asyn
     if(!locked.rowCount)throw Object.assign(new Error('User not found'),{status:404});
     if(locked.rows[0].role==='owner'&&req.user!.role!=='owner')throw Object.assign(new Error('Only an owner can modify another owner'),{status:403});
     if(locked.rows[0].role==='owner'&&(d.role&&d.role!=='owner'||d.active===false)){
-      const count=await client.query("SELECT count(*)::int AS count FROM users WHERE organization_id=$1 AND branch_id=$2 AND role='owner' AND active=true",[req.user!.organizationId,req.user!.branchId]);
-      if(count.rows[0].count<=1)throw Object.assign(new Error('The last active owner cannot be demoted or deactivated'),{status:409});
+      const owners=await client.query("SELECT id FROM users WHERE organization_id=$1 AND branch_id=$2 AND role='owner' AND active=true FOR UPDATE",[req.user!.organizationId,req.user!.branchId]);
+      if(owners.rowCount<=1)throw Object.assign(new Error('The last active owner cannot be demoted or deactivated'),{status:409});
     }
     const updated=await client.query(`UPDATE users SET
       role=COALESCE($1,role),active=COALESCE($2,active),display_name=COALESCE($3,display_name),
