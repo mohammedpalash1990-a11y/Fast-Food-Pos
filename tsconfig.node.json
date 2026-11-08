@@ -5,7 +5,13 @@
     "module": "ESNext",
     "moduleResolution": "Node",
     "allowSyntheticDefaultImports": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ],
+    "outDir": "./node_modules/.tmp/vite-config",
+    "tsBuildInfoFile": "./node_modules/.tmp/vite-config/tsconfig.node.tsbuildinfo"
   },
-  "include": ["vite.config.ts"]
+  "include": [
+    "vite.config.ts"
+  ]
 }
