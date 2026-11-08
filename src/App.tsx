@@ -28,7 +28,7 @@ const themePresets: Record<ThemePresetName, { accent: string; background: string
   'Burgundy Signature': { accent:'#C5A06B', background:'#401D29', surface:'#552A38', sidebar:'#2C121B', text:'#F5EFE8', muted:'#C7B3B6', border:'#704653' },
   'Modern Ivory': { accent:'#B89B68', background:'#F4F1E9', surface:'#FFFFFF', sidebar:'#26332C', text:'#26332C', muted:'#68766E', border:'#DED8CA' }
 };
-const defaultThemeConfig: ThemeConfig = { preset:'Arabian Royal', appearance:'Both', customColors:{ accent:'#C6A66B', background:'#102B25', surface:'#1D3A31', sidebar:'#0B211B' } };
+const defaultThemeConfig: ThemeConfig = { preset:'Modern Ivory', appearance:'Light', customColors:{ accent:'#B89B68', background:'#F4F1E9', surface:'#FFFFFF', sidebar:'#18362B' } };
 const getThemeStyle = (config: ThemeConfig, light: boolean): CSSProperties => {
   const preset = themePresets[config.preset] || themePresets['Arabian Royal'];
   return {
