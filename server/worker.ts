@@ -15,6 +15,7 @@ export default {
     initialization ??= (async () => {
       // Initialize the existing Express API only after Cloudflare bindings are available.
       process.env.CLOUDFLARE_WORKER = 'true';
+      process.env.PORT = '8787';
       process.env.NEON_DATABASE_URL = env.HYPERDRIVE.connectionString;
       process.env.JWT_SECRET = env.JWT_SECRET;
       if (env.CORS_ORIGIN) process.env.CORS_ORIGIN = env.CORS_ORIGIN;
@@ -23,7 +24,15 @@ export default {
 
     try {
       await initialization;
-      return await serverHandler.fetch(request, env, ctx);
+      const handlerFetch = serverHandler.fetch;
+      if (!handlerFetch) {
+        throw new Error('Cloudflare HTTP server handler is unavailable');
+      }
+      return await handlerFetch(
+        request as Request<unknown, IncomingRequestCfProperties>,
+        env,
+        ctx,
+      );
     } catch (error) {
       console.error('Cloudflare API initialization failed', error);
       return Response.json({ error: 'API initialization failed' }, { status: 503 });
