@@ -20,7 +20,8 @@
     "test:integration": "tsx --test tests/integration/*.test.ts",
     "worker:dev": "wrangler dev",
     "worker:deploy": "wrangler deploy",
-    "worker:types": "wrangler types"
+    "worker:types": "wrangler types",
+    "postinstall": "node scripts/patch-body-parser.cjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
