@@ -585,8 +585,11 @@ app.patch('/api/deliveries/:id/status',authenticate,allow('owner','manager','cas
 }));
 registerHrRoutes(app,{pool,inTransaction,authenticate,allow,asyncRoute,audit});
 registerReportRoutes(app,{pool,authenticate,allow,asyncRoute});
-const frontendDist=resolve(dirname(fileURLToPath(import.meta.url)),'../dist');
-app.use(express.static(frontendDist,{index:false}));
-app.get('/menu',(req,res,next)=>res.sendFile(resolve(frontendDist,'menu.html'),error=>{if(error)next(error);}));
+if (process.env.CLOUDFLARE_WORKER !== 'true') {
+  const frontendDist=resolve(dirname(fileURLToPath(import.meta.url)),'../dist');
+  app.use(express.static(frontendDist,{index:false}));
+  app.get('/menu',(req,res,next)=>res.sendFile(resolve(frontendDist,'menu.html'),error=>{if(error)next(error);}));
+}
 app.use((error:Error&{status?:number},_req:Request,res:Response,_next:NextFunction)=>{console.error(error);res.status(error.status||500).json({error:error.status?error.message:'Internal server error'});});
-const port=Number(process.env.PORT||3001);app.listen(port,()=>console.log(`Musafir API listening on ${port}`));
+const port=Number(process.env.PORT||3001);
+export const server=app.listen(port,()=>console.log(`Musafir API listening on ${port}`));
