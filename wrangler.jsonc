@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "fast-food-pos",
+  "main": "server/worker.ts",
+  "compatibility_date": "2026-11-09",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "648d6edd5ed9447889a9d3ddda7c7194"
+    }
+  ],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+}
