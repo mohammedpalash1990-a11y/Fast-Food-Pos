@@ -12,5 +12,8 @@
       "binding": "HYPERDRIVE",
       "id": "REPLACE_WITH_CLOUDFLARE_HYPERDRIVE_ID"
     }
+  ],
+  "compatibility_flags": [
+    "nodejs_compat"
   ]
 }
