@@ -1,3 +1,4 @@
+/// <reference types="@cloudflare/workers-types" />
 import { httpServerHandler } from 'cloudflare:node';
 
 interface Env {
