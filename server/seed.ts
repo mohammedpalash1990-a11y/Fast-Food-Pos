@@ -6,10 +6,14 @@ if (process.env.NODE_ENV === 'production') {
   const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
   const restaurantName = process.env.BOOTSTRAP_RESTAURANT_NAME?.trim() || 'Musafir Fast Food';
   const branchName = process.env.BOOTSTRAP_BRANCH_NAME?.trim() || 'Main Branch';
+  const jwtSecret = process.env.JWT_SECRET;
   if (!email || !password) {
-    console.log('Production bootstrap skipped: set BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD to create the first owner account.');
+    console.log('Production bootstrap skipped: bootstrap credentials are not configured.');
     await pool.end();
     process.exit(0);
+  }
+  if (!jwtSecret || jwtSecret.length < 32) {
+    throw new Error('JWT_SECRET must contain at least 32 characters before production owner bootstrap can run.');
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || password.length > 128) {
     throw new Error('BOOTSTRAP_ADMIN_EMAIL must be valid and BOOTSTRAP_ADMIN_PASSWORD must contain 12–128 characters.');
@@ -17,20 +21,45 @@ if (process.env.NODE_ENV === 'production') {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // A transaction-scoped advisory lock serializes the first-owner path even
+    // when the organization row does not exist yet.
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('musafir-production-owner-bootstrap'))");
     const slug = 'musafir-production';
     let org = await client.query<{id:string}>('SELECT id FROM organizations WHERE slug=$1 FOR UPDATE', [slug]);
-    if (!org.rowCount) org = await client.query('INSERT INTO organizations(name,slug) VALUES($1,$2) RETURNING id', [restaurantName,slug]);
+    if (!org.rowCount) {
+      org = await client.query('INSERT INTO organizations(name,slug) VALUES($1,$2) RETURNING id', [restaurantName,slug]);
+    }
     const organizationId = org.rows[0].id;
     let branch = await client.query<{id:string}>('SELECT id FROM branches WHERE organization_id=$1 ORDER BY created_at LIMIT 1 FOR UPDATE', [organizationId]);
-    if (!branch.rowCount) branch = await client.query('INSERT INTO branches(organization_id,name,code) VALUES($1,$2,$3) RETURNING id', [organizationId,branchName,'KSA-01']);
-    const branchId = branch.rows[0].id;
-    const existing = await client.query<{id:string}>('SELECT id FROM users WHERE organization_id=$1 AND email=$2', [organizationId,email]);
-    if (!existing.rowCount) {
-      const hash = await bcrypt.hash(password, 12);
-      await client.query("INSERT INTO users(organization_id,branch_id,email,password_hash,display_name,role) VALUES($1,$2,$3,$4,$5,'owner')", [organizationId,branchId,email,hash,'Restaurant Owner']);
-      console.log('Production owner account created for ' + email + '.');
+    if (!branch.rowCount) {
+      branch = await client.query('INSERT INTO branches(organization_id,name,code) VALUES($1,$2,$3) RETURNING id', [organizationId,branchName,'KSA-01']);
+    }
+    const configuredUser = await client.query<{id:string;role:string}>(
+      'SELECT id,role FROM users WHERE organization_id=$1 AND email=$2 FOR UPDATE',
+      [organizationId,email]
+    );
+    const existingOwner = await client.query<{id:string;email:string}>(
+      "SELECT id,email FROM users WHERE organization_id=$1 AND role='owner' FOR UPDATE",
+      [organizationId]
+    );
+    if (configuredUser.rowCount) {
+      if (configuredUser.rows[0].role !== 'owner') {
+        throw new Error('Bootstrap email already belongs to a non-owner account; refusing to change it.');
+      }
+      if (!existingOwner.rows.some(owner => owner.id === configuredUser.rows[0].id)) {
+        throw new Error('Existing owner verification failed; refusing to modify production accounts.');
+      }
+      console.log('Production owner account already exists; no account data was changed.');
     } else {
-      console.log('Production owner account already exists; password was not changed.');
+      if (existingOwner.rowCount) {
+        throw new Error('A production owner already exists for this organization; refusing to create another owner.');
+      }
+      const hash = await bcrypt.hash(password, 12);
+      await client.query(
+        "INSERT INTO users(organization_id,branch_id,email,password_hash,display_name,role) VALUES($1,$2,$3,$4,$5,'owner')",
+        [organizationId,branch.rows[0].id,email,hash,'Restaurant Owner']
+      );
+      console.log('Production owner account created.');
     }
     await client.query('COMMIT');
   } catch (error) {
