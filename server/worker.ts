@@ -14,6 +14,15 @@ let initialization: Promise<unknown> | undefined;
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    // Cloudflare routes /menu through the Worker so the separate Vite menu
+    // entry (menu.html) is served at the clean QR URL.
+    if (url.pathname === '/menu' || url.pathname === '/menu/') {
+      const assetUrl = new URL('/menu.html', request.url);
+      assetUrl.search = url.search;
+      return env.ASSETS.fetch(assetUrl.toString(), { method: request.method, headers: request.headers });
+    }
+
     if (!url.pathname.startsWith('/api/')) {
       return env.ASSETS.fetch(request);
     }
