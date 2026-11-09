@@ -5,6 +5,7 @@ interface Env {
   HYPERDRIVE: Hyperdrive;
   JWT_SECRET: string;
   CORS_ORIGIN?: string;
+  ASSETS: Fetcher;
 }
 
 const serverHandler = httpServerHandler({ port: 8787 });
@@ -12,8 +13,12 @@ let initialization: Promise<unknown> | undefined;
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
+    if (!url.pathname.startsWith('/api/')) {
+      return env.ASSETS.fetch(request);
+    }
+
     initialization ??= (async () => {
-      // Initialize the existing Express API only after Cloudflare bindings are available.
       process.env.CLOUDFLARE_WORKER = 'true';
       process.env.PORT = '8787';
       process.env.NEON_DATABASE_URL = env.HYPERDRIVE.connectionString;
@@ -25,9 +30,7 @@ export default {
     try {
       await initialization;
       const handlerFetch = serverHandler.fetch;
-      if (!handlerFetch) {
-        throw new Error('Cloudflare HTTP server handler is unavailable');
-      }
+      if (!handlerFetch) throw new Error('Cloudflare HTTP server handler is unavailable');
       return await handlerFetch(
         request as Request<unknown, IncomingRequestCfProperties>,
         env,
