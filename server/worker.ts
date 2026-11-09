@@ -20,7 +20,7 @@ export default {
     if (url.pathname === '/menu' || url.pathname === '/menu/') {
       const assetUrl = new URL('/menu.html', request.url);
       assetUrl.search = url.search;
-      return env.ASSETS.fetch(new Request(assetUrl, request));
+      return env.ASSETS.fetch(assetUrl.toString(), { method: request.method, headers: request.headers });
     }
 
     if (!url.pathname.startsWith('/api/')) {
