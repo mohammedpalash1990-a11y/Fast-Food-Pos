@@ -19,7 +19,28 @@ type AuthUser = { id:string; organizationId:string; branchId:string; email:strin
 type AuthedRequest = Request & { user?:AuthUser };
 const app=express();
 app.set('trust proxy',1);
-app.use(helmet()); app.use(cors({origin:(process.env.CORS_ORIGIN||'http://localhost:5173').split(',').map(s=>s.trim()),credentials:true})); app.use(express.json({limit:'1mb'}));
+app.use(helmet()); app.use(cors({origin:(process.env.CORS_ORIGIN||'http://localhost:5173').split(',').map(s=>s.trim()),credentials:true}));
+const jsonBodyParser: express.RequestHandler = (req,res,next) => {
+  const contentType=String(req.headers['content-type']||'').split(';',1)[0].trim().toLowerCase();
+  if (!['POST','PUT','PATCH'].includes(req.method)||contentType!=='application/json') return next();
+  let raw='',size=0,tooLarge=false;
+  const decoder=new TextDecoder();
+  req.on('data',(chunk:Uint8Array|string)=>{
+    const bytes=typeof chunk==='string'?new TextEncoder().encode(chunk):chunk;
+    size+=bytes.byteLength;
+    if(size>1024*1024){tooLarge=true;return;}
+    raw+=decoder.decode(bytes,{stream:true});
+  });
+  req.on('end',()=>{
+    if(tooLarge)return res.status(413).json({error:'JSON body exceeds 1 MB'});
+    raw+=decoder.decode();
+    if(!raw.trim()){req.body={};return next();}
+    try{req.body=JSON.parse(raw);next();}
+    catch{return res.status(400).json({error:'Invalid JSON body'});}
+  });
+  req.on('error',next);
+};
+app.use(jsonBodyParser);
 const authLimiter=rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:true,legacyHeaders:false});
 // The customer QR menu is public: it is rate limited per IP so a single client
 // cannot hammer the branch menu, and it never exposes anything beyond the menu.
