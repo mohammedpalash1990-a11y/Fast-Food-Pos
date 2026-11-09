@@ -1,5 +1,4 @@
 const fs = require('node:fs');
-const path = require('node:path');
 
 const entry = require.resolve('body-parser');
 let source = fs.readFileSync(entry, 'utf8');
