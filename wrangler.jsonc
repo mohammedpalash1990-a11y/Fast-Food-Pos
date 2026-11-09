@@ -7,6 +7,13 @@
   "observability": {
     "enabled": true
   },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/api/*"
+    ]
+  },
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
