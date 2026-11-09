@@ -2,6 +2,10 @@
 
 The existing Express API is exposed through Cloudflare's Node.js HTTP server adapter. PostgreSQL connections use Cloudflare Hyperdrive, which connects to the existing Neon production database. The API does not copy or reset database rows.
 
+## Data source policy
+
+Neon is the new POS database and starts with its required schema only. Legacy Render Sales, Purchases, and other business records are intentionally out of scope and must not be imported. Keep the old Render database untouched; it is not required for this deployment.
+
 ## One-time Cloudflare setup
 
 1. Install dependencies with `npm ci`.
