@@ -58,11 +58,11 @@ img { display: block; max-width: 100%; }
 .musafir-pos select,
 .musafir-pos textarea { min-width: 0; max-width: 100%; }
 .musafir-pos img { max-width: 100%; }
-@media (min-width: 768px) and (max-width: 1535px) {
+@media (min-width: 768px) and (max-width: 1279px) {
   .musafir-pos { grid-template-columns: minmax(0, 1fr) minmax(290px, 360px); align-items: start; }
   .musafir-pos > aside:last-child { grid-column: 1 / -1; min-height: 300px; max-height: 420px; }
 }
-@media (min-width: 1536px) {
+@media (min-width: 1280px) {
   .musafir-pos { grid-template-columns: minmax(0, 1.12fr) minmax(330px, .9fr) minmax(290px, .82fr); align-items: stretch; }
   .musafir-pos > aside:last-child { grid-column: auto; max-height: min(78vh, 860px); }
 }
