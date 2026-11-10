@@ -100,15 +100,17 @@ test('the public menu rejects missing, malformed and unknown branches', async ()
   assert.equal((await unknown.json()).error, 'Branch not found');
 });
 
-test('the QR endpoint returns a real PNG for a branch', async () => {
+test('the QR endpoint returns an edge-compatible SVG for a branch', async () => {
   const response = await fetch(`${API}/api/menu/qr?branchId=${ids.branch}&table=12`);
   assert.equal(response.status, 200);
-  assert.match(response.headers.get('content-type') || '', /image\/png/);
+  assert.match(response.headers.get('content-type') || '', /image\\/svg\\+xml/);
   assert.equal(response.headers.get('cache-control'), 'no-store');
 
-  const bytes = Buffer.from(await response.arrayBuffer());
-  assert.ok(bytes.length > 200, 'QR image should contain data');
-  assert.equal(bytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', 'PNG signature');
+  const svg = await response.text();
+  assert.match(svg, /^<\\?xml|^<svg/);
+  assert.match(svg, /<svg[\\s>]/);
+  assert.match(svg, /branch%3D|branch=/);
+  assert.match(svg, /table%3D|table=/);
 });
 
 test('the QR endpoint validates its branch', async () => {
