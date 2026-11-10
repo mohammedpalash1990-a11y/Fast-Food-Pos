@@ -30,7 +30,7 @@ const num = (value: unknown) => Number(value);
 
 async function createUser(key: string, organizationId: string, branchId: string, role: string) {
   const hash = await bcrypt.hash(PASSWORD, 4);
-  const email = key + '-' + suffix + '@it.local';
+  const email = key.toLowerCase() + '-' + suffix + '@it.local';
   emails[key] = email;
   const inserted = await db.query(
     'INSERT INTO users(organization_id, branch_id, email, password_hash, display_name, role) VALUES($1, $2, $3, $4, $5, $6) RETURNING id',
