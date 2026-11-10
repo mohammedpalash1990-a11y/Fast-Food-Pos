@@ -6,11 +6,16 @@ const exportsToStub = ['json', 'raw', 'text', 'urlencoded'];
 let changed = false;
 
 for (const name of exportsToStub) {
-  // body-parser 1.x and 2.x expose these factories from different relative paths.
-  const original = new RegExp(`exports\\.${name}\\s*=\\s*require\\(['"]\\.\\/(?:lib\\/)?types\\/${name}['"]\\)`);
+  // body-parser 1.x uses lazy getters; 2.x exposes direct require assignments.
   const replacement = `exports.${name} = function ${name} () { return function ${name}Middleware (req, res, next) { next() } }`;
-  if (original.test(source)) {
-    source = source.replace(original, replacement);
+  const directExport = new RegExp(`exports\\\\.${name}\\\\s*=\\\\s*require\\\\(['"]\\\\.\\\\/(?:lib\\\\/)?types\\\\/${name}['"]\\\\)`);
+  const lazyGetterExport = new RegExp(`Object\\\\.defineProperty\\\\(exports,\\\\s*['"]${name}['"],\\\\s*\\\\{[\\\\s\\\\S]*?get:\\\\s*createParserGetter\\\\(['"]${name}['"]\\\\)[\\\\s\\\\S]*?\\\\}\\\\s*\\\\)`);
+
+  if (directExport.test(source)) {
+    source = source.replace(directExport, replacement);
+    changed = true;
+  } else if (lazyGetterExport.test(source)) {
+    source = source.replace(lazyGetterExport, replacement);
     changed = true;
   } else if (!source.includes(`exports.${name} = function ${name} ()`)) {
     throw new Error(`Unsupported body-parser export layout for "${name}" at ${entry}; refusing an unsafe patch.`);
