@@ -25,11 +25,13 @@ async function call(method: string, path: string, token?: string, body?: unknown
 
 const ids: Record<string, string> = {};
 const tokens: Record<string, string> = {};
+const emails: Record<string, string> = {};
 const num = (value: unknown) => Number(value);
 
 async function createUser(key: string, organizationId: string, branchId: string, role: string) {
   const hash = await bcrypt.hash(PASSWORD, 4);
   const email = key + '-' + suffix + '@it.local';
+  emails[key] = email;
   const inserted = await db.query(
     'INSERT INTO users(organization_id, branch_id, email, password_hash, display_name, role) VALUES($1, $2, $3, $4, $5, $6) RETURNING id',
     [organizationId, branchId, email, hash, key, role]
@@ -227,5 +229,52 @@ test('existing POS endpoints still work after HR routes are registered', async (
   assert.equal((await fetch(API + '/api/health')).status, 200);
   for (const path of ['/api/inventory', '/api/suppliers', '/api/expenses', '/api/payables']) {
     assert.equal((await call('GET', path, tokens.ownerA)).status, 200, path);
+  }
+});
+
+
+test('login issues a valid JWT and /auth/me returns the active database user', async () => {
+  const login = await call('POST', '/api/auth/login', undefined, { email: emails.ownerA, password: PASSWORD });
+  assert.equal(login.status, 200);
+  assert.equal(typeof login.body.token, 'string');
+  assert.ok(login.body.token.length > 20);
+  assert.equal(login.body.user.email, emails.ownerA);
+  assert.equal(login.body.user.role, 'owner');
+  assert.equal(login.body.user.organizationId, ids.orgA);
+
+  const me = await call('GET', '/api/auth/me', login.body.token);
+  assert.equal(me.status, 200);
+  assert.equal(me.body.user.email, emails.ownerA);
+  assert.equal(me.body.user.role, 'owner');
+  assert.equal(me.body.user.id, login.body.user.id);
+});
+
+test('login rejects wrong passwords and malformed credentials without issuing a token', async () => {
+  const wrongPassword = await call('POST', '/api/auth/login', undefined, { email: emails.ownerA, password: 'incorrect-password' });
+  assert.equal(wrongPassword.status, 401);
+  assert.equal(wrongPassword.body.token, undefined);
+
+  const unknownUser = await call('POST', '/api/auth/login', undefined, { email: 'missing-' + suffix + '@it.local', password: PASSWORD });
+  assert.equal(unknownUser.status, 401);
+  assert.equal(unknownUser.body.token, undefined);
+
+  const malformed = await call('POST', '/api/auth/login', undefined, { email: 'not-an-email', password: PASSWORD });
+  assert.equal(malformed.status, 400);
+  assert.equal(malformed.body.token, undefined);
+});
+
+test('/auth/me rejects missing, malformed, expired and inactive-user sessions', async () => {
+  assert.equal((await call('GET', '/api/auth/me')).status, 401);
+  assert.equal((await call('GET', '/api/auth/me', 'not-a-jwt')).status, 401);
+
+  const claims = jwt.decode(tokens.ownerA) as jwt.JwtPayload;
+  const expired = jwt.sign({ sub: claims.sub }, process.env.JWT_SECRET!, { expiresIn: -1, issuer: 'musafir-pos' });
+  assert.equal((await call('GET', '/api/auth/me', expired)).status, 401);
+
+  await db.query('UPDATE users SET active=false WHERE email=$1', [emails.cashierA]);
+  try {
+    assert.equal((await call('GET', '/api/auth/me', tokens.cashierA)).status, 401);
+  } finally {
+    await db.query('UPDATE users SET active=true WHERE email=$1', [emails.cashierA]);
   }
 });
