@@ -8,8 +8,8 @@ let changed = false;
 for (const name of exportsToStub) {
   // body-parser 1.x uses lazy getters; 2.x exposes direct require assignments.
   const replacement = 'exports.' + name + ' = function ' + name + ' () { return function ' + name + 'Middleware (req, res, next) { next() } }';
-  const directExport = new RegExp('exports\\.' + name + '\\s*=\\s*require\\([\'"]\\.\\/(?:lib\\/)?types\\/' + name + '[\'"]\\)');
-  const lazyGetterExport = new RegExp('Object\\.defineProperty\\(exports,\\s*[\'"]' + name + '[\'"],\\s*\\{[\\s\\S]*?get:\\s*createParserGetter\\([\'"]' + name + '[\'"]\\)[\\s\\S]*?\\}\\s*\\)');
+  const directExport = new RegExp("exports\\." + name + "\\s*=\\s*require\\(['\"]\\.\\/(?:lib\\/)?types\\/" + name + "['\"]\\)");
+  const lazyGetterExport = new RegExp("Object\\.defineProperty\\(exports,\\s*['\"]" + name + "['\"],\\s*\\{[\\s\\S]*?get:\\s*createParserGetter\\(['\"]" + name + "['\"]\\)[\\s\\S]*?\\}\\s*\\)");
 
   if (directExport.test(source)) {
     source = source.replace(directExport, replacement);
