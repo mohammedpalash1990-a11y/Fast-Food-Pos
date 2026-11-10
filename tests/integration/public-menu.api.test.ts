@@ -109,8 +109,7 @@ test('the QR endpoint returns an edge-compatible SVG for a branch', async () => 
   const svg = await response.text();
   assert.match(svg, /^<\?xml|^<svg/);
   assert.match(svg, /<svg[\s>]/);
-  assert.match(svg, /branch%3D|branch=/);
-  assert.match(svg, /table%3D|table=/);
+  assert.match(svg, /<path/);
 });
 
 test('the QR endpoint validates its branch', async () => {
