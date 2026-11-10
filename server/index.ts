@@ -322,8 +322,10 @@ app.get('/api/menu/qr',publicMenuLimiter,asyncRoute(async(req,res)=>{
   const params=new URLSearchParams({branch:branch.rows[0].id});
   const table=String(req.query.table||'').trim().slice(0,24);
   if(table)params.set('table',table);
-  const png=await QRCode.toBuffer(`${base}?${params.toString()}`,{type:'png',width:512,margin:2,errorCorrectionLevel:'M',color:{dark:'#161616',light:'#ffffff'}});
-  res.type('png').set('Cache-Control','no-store').send(png);
+  // SVG rendering is edge-runtime compatible; PNG's Node buffer renderer
+  // fails under Cloudflare Workers' Node compatibility layer.
+  const svg=await QRCode.toString(`${base}?${params.toString()}`,{type:'svg',width:512,margin:2,errorCorrectionLevel:'M',color:{dark:'#161616',light:'#ffffff'}});
+  res.type('svg').set('Cache-Control','no-store').send(svg);
 }));
 app.get('/api/inventory',authenticate,asyncRoute(async(req:AuthedRequest,res)=>{const rows=await pool.query('SELECT i.id,i.sku,i.name,i.category,i.unit,i.stock,i.track_stock AS "trackStock",i.reorder_level AS "reorderLevel",i.unit_cost AS "unitCost",i.expires_on AS "expiresOn",s.name AS supplier FROM ingredients i LEFT JOIN suppliers s ON s.id=i.supplier_id WHERE i.branch_id=$1 ORDER BY i.name',[req.user!.branchId]);res.json({items:rows.rows});}));
 app.get('/api/inventory/:id/movements',authenticate,allow('owner','manager','inventory','accountant'),asyncRoute(async(req:AuthedRequest,res)=>{const rows=await pool.query(`SELECT sm.id,sm.movement_type AS type,sm.quantity_delta AS quantity,sm.note,sm.created_at AS "createdAt",u.display_name AS "createdBy" FROM stock_movements sm LEFT JOIN users u ON u.id=sm.created_by JOIN ingredients i ON i.id=sm.ingredient_id WHERE sm.ingredient_id=$1 AND sm.branch_id=$2 ORDER BY sm.created_at DESC LIMIT 100`,[String(req.params.id),req.user!.branchId]);res.json({movements:rows.rows});}));
